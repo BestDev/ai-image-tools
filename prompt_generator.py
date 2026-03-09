@@ -90,6 +90,57 @@ Rules:
 
 Output ONLY the final prompt. No explanations."""
 
+QWEN_SYSTEM_PROMPT_ZH = """你是一位专为文本生成图像AI模型设计的图像提示词专家。
+
+分析给定图像，按照以下结构生成中文描述提示词：
+
+【主体与动作】+【视觉风格】+【光线与氛围】+【技术约束】
+
+规则：
+1. 主体与动作（放在最前，最重要）：
+   - 人物：年龄、性别、民族、发型（颜色/风格/长度）、面部表情、视线方向、姿势、肢体语言
+   - 服装：类型、颜色、面料质感、状态、配饰
+   - 动作：正在做什么、手的位置、身体朝向
+
+2. 视觉风格：
+   - 媒介：写实摄影 / 电影感 / 油画 / 等
+   - 相机：镜头类型、景深、胶片种类
+   - 质感关键词：皮肤质感、面料细节、表面瑕疵、胶片颗粒
+
+3. 光线与氛围：
+   - 光源方向与类型（自然光/人造光）
+   - 色温（暖/冷/中性）
+   - 整体情绪与氛围
+   - 带有景深的背景描述
+
+4. 技术约束（放在最后）：
+   - 质量：8K分辨率、超精细、锐利对焦
+   - 安全：正确解剖结构、无多余肢体、无水印
+
+仅输出提示词文本，无需解释、无标签、无Markdown格式。
+以单段连续文字书写，80-250字。
+将最重要的描述词（主体+外貌）放在最前面。"""
+
+QWEN_REFORMAT_PROMPT_ZH = """你是Z-Image Turbo文本生成图像模型的提示词工程师。
+
+任务：将提供的图像描述转换为优化的Z-Image Turbo中文提示词。
+
+输出格式（单段连续文字，80-250字）：
+【主体与外貌细节】+【服装与配饰】+【背景与场景】+【视觉风格与相机】+【光线与氛围】+【质量约束】
+
+规则：
+- 将最重要的主体描述词放在最前（模型对开头内容关注度最高）
+- 包含质感关键词：皮肤质感、面料细节、胶片颗粒、表面瑕疵
+- 结尾包含质量关键词：8K分辨率、锐利对焦、正确解剖结构、无水印
+- 仅使用正面描述（不用"不丑陋"，而用"美丽"）
+- 以自然中文散文书写，不使用逗号分隔的标签
+- 不使用矛盾风格（如"写实风格卡通"）
+
+仅输出最终提示词，无需解释。"""
+
+QWEN_SYSTEM_PROMPTS = {"en": QWEN_SYSTEM_PROMPT, "zh": QWEN_SYSTEM_PROMPT_ZH}
+QWEN_REFORMAT_PROMPTS = {"en": QWEN_REFORMAT_PROMPT, "zh": QWEN_REFORMAT_PROMPT_ZH}
+
 
 # ── 모델 로드 / 해제 ──────────────────────────────────────────────────────────
 
@@ -281,7 +332,7 @@ def run_joycaption(image_path: str, model, processor, mode: str = "descriptive")
 
 # ── 방식 2: Qwen2.5-VL ───────────────────────────────────────────────────────
 
-def run_qwen(image_path: str, model, processor) -> str:
+def run_qwen(image_path: str, model, processor, lang: str = "en") -> str:
     import os
     import tempfile
     import torch
@@ -300,14 +351,15 @@ def run_qwen(image_path: str, model, processor) -> str:
     else:
         actual_path = image_path
 
+    user_text = "为这张图像生成Z-Image Turbo提示词。" if lang == "zh" else "Generate a Z-Image Turbo prompt for this image."
     try:
         messages = [
-            {"role": "system", "content": QWEN_SYSTEM_PROMPT},
+            {"role": "system", "content": QWEN_SYSTEM_PROMPTS[lang]},
             {
                 "role": "user",
                 "content": [
                     {"type": "image", "image": f"file://{actual_path}"},
-                    {"type": "text", "text": "Generate a Z-Image Turbo prompt for this image."},
+                    {"type": "text", "text": user_text},
                 ],
             },
         ]
@@ -341,15 +393,17 @@ def run_qwen(image_path: str, model, processor) -> str:
 
 # ── 방식 3 Step2: Qwen 재형식화 ──────────────────────────────────────────────
 
-def run_qwen_reformat(raw_caption: str, model, processor) -> str:
+def run_qwen_reformat(raw_caption: str, model, processor, lang: str = "en") -> str:
     import torch
 
+    user_text = (
+        f"将以下图像描述转换为Z-Image Turbo提示词：\n\n{raw_caption}"
+        if lang == "zh"
+        else f"Convert this image description into a Z-Image Turbo prompt:\n\n{raw_caption}"
+    )
     messages = [
-        {"role": "system", "content": QWEN_REFORMAT_PROMPT},
-        {
-            "role": "user",
-            "content": f"Convert this image description into a Z-Image Turbo prompt:\n\n{raw_caption}",
-        },
+        {"role": "system", "content": QWEN_REFORMAT_PROMPTS[lang]},
+        {"role": "user", "content": user_text},
     ]
 
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -488,7 +542,7 @@ def run_method2(images: list[str], args):
             continue
         print(f"\n[{i}/{total}] {Path(img).name}")
         t = time.time()
-        prompt = run_qwen(img, model, processor)
+        prompt = run_qwen(img, model, processor, lang=args.lang)
         print(f"  완료 ({time.time()-t:.1f}초)")
         print_result(img, prompt, label="Qwen → Z-Image")
         _save(img, prompt, args)
@@ -554,7 +608,7 @@ def run_method3(images: list[str], args):
             continue
         print(f"\n[{i}/{total}] {Path(img).name}")
         t = time.time()
-        final = run_qwen_reformat(raw, qwen_model, qwen_proc)
+        final = run_qwen_reformat(raw, qwen_model, qwen_proc, lang=args.lang)
         print(f"  완료 ({time.time()-t:.1f}초)")
         print_result(img, final, label="최종 프롬프트 (Z-Image Turbo)")
         _save(img, final, args, suffix="_final")
@@ -596,6 +650,10 @@ def main():
         "--accumulate", "-a", action="store_true",
         help="폴더 처리 시 개별 저장 대신 하나의 .txt 에 누적 (프롬프트 사이 빈 줄)"
     )
+    parser.add_argument(
+        "--lang", default="en", choices=["en", "zh"],
+        help="출력 언어 (기본: en / zh: 중국어, 방식 2·3에서만 적용)"
+    )
     args = parser.parse_args()
 
     # 입력 경로 처리
@@ -615,9 +673,11 @@ def main():
         return
 
     method_names = {1: "JoyCaption Beta One", 2: "Qwen2.5-VL-7B", 3: "JoyCaption + Qwen 파이프라인"}
+    lang_names = {"en": "영어", "zh": "중국어"}
     print(f"=== Z-Image Turbo 프롬프트 생성 ===")
     print(f"방식  : {args.method} - {method_names[args.method]}")
     print(f"양자화: {args.quant}")
+    print(f"언어  : {lang_names[args.lang]}" + (" (방식 1은 항상 영어)" if args.method == 1 and args.lang != "en" else ""))
     print(f"이미지: {len(images)}개")
     if args.output_dir:
         save_mode = "누적 (prompts.txt)" if args.accumulate else "개별 (.txt per image)"

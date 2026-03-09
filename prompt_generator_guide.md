@@ -1,6 +1,6 @@
 # prompt_generator.py 사용 가이드
 
-> 최종 업데이트: 2026-03-08 (transformers 5.x 호환성 수정 / 재개 지원 / LoRA 권장 방식 추가)
+> 최종 업데이트: 2026-03-09 (transformers 5.x 호환성 수정 / 재개 지원 / LoRA 권장 방식 추가 / --lang 중국어 출력 지원)
 > 환경: WSL2 / Ubuntu-24.04 / RTX 4090 24GB / Python 3.12
 > 가상환경: `/home/bestdev/ai_training/venv-prompt`
 > 검증 상태: `Ubuntu-24.04` 에서 GPU 실행 확인 (transformers 5.2.0 / bitsandbytes 0.49.2)
@@ -22,7 +22,8 @@
 
 ## 1. 개요
 
-이미지를 분석하여 **Z-Image Turbo에 최적화된 영문 서술형 프롬프트**를 생성한다.
+이미지를 분석하여 **Z-Image Turbo에 최적화된 서술형 프롬프트**를 생성한다.
+기본 출력 언어는 **영어**이며, `--lang zh` 옵션으로 **중국어** 출력도 지원한다 (방식 2·3).
 
 ### 지원 방식
 
@@ -66,7 +67,7 @@ env -u LD_LIBRARY_PATH ./prompt_generator.py <이미지_또는_폴더>
 ### 기본 구조
 
 ```bash
-python3 prompt_generator.py <input> [--method {1,2,3}] [--mode MODE] [--quant {nf4,bf16}] [--output-dir DIR] [--accumulate]
+python3 prompt_generator.py <input> [--method {1,2,3}] [--mode MODE] [--quant {nf4,bf16}] [--output-dir DIR] [--accumulate] [--lang {en,zh}]
 ```
 
 ---
@@ -81,6 +82,7 @@ python3 prompt_generator.py <input> [--method {1,2,3}] [--mode MODE] [--quant {n
 | `--quant` | — | `nf4` | 양자화 방식 |
 | `--output-dir` | `-o` | 없음 | 저장 폴더 (미지정 시 콘솔 출력만) |
 | `--accumulate` | `-a` | off | 누적 저장 모드 (하나의 .txt에 이어쓰기). **중단 후 재실행 시 자동 재개** |
+| `--lang` | — | `en` | 출력 언어 (`en`: 영어 / `zh`: 중국어). **방식 2·3에서만 적용** (방식 1은 무시) |
 
 ### `--mode` 옵션 (방식 1·3에서만 사용)
 
@@ -124,6 +126,7 @@ python3 prompt_generator.py <input> [--method {1,2,3}] [--mode MODE] [--quant {n
 - Z-Image Turbo 4-Layer 형식을 시스템 프롬프트로 직접 지시
 - Instruction Following 가능 (스크립트 내 `QWEN_SYSTEM_PROMPT` 수정으로 형식 커스텀)
 - `--mode` 옵션 미사용 (Qwen은 시스템 프롬프트로 제어)
+- `--lang zh` 옵션으로 중국어 프롬프트 출력 가능
 
 ### 방식 3: 파이프라인 (최고 품질)
 
@@ -134,6 +137,7 @@ python3 prompt_generator.py <input> [--method {1,2,3}] [--mode MODE] [--quant {n
 - JoyCaption의 캡셔닝 정확도 + Qwen의 형식 제어 결합
 - 이미지당 모델 로드/해제를 2회 반복 (속도 느림)
 - 1차 결과(`_raw`)와 최종 결과(`_final`)를 별도 저장
+- `--lang zh` 옵션으로 최종 프롬프트를 중국어로 출력 가능 (1차 JoyCaption 캡션은 항상 영어)
 
 ---
 
@@ -454,7 +458,32 @@ env -u LD_LIBRARY_PATH TRANSFORMERS_VERBOSITY=error HF_HUB_DISABLE_PROGRESS_BARS
 
 ---
 
-### 예제 H: bf16 고품질 모드 (VRAM 여유 시)
+### 예제 H: 중국어 프롬프트 출력 (`--lang zh`)
+
+방식 2·3에서 `--lang zh` 옵션을 추가하면 프롬프트가 중국어로 생성된다.
+
+```bash
+# 방식 2 — 단일 이미지, 중국어 출력
+python3 prompt_generator.py /mnt/d/images/photo.jpg \
+  --method 2 \
+  --lang zh
+
+# 방식 3 — 폴더 배치, 중국어 출력, 누적 저장
+python3 prompt_generator.py /mnt/d/images \
+  --method 3 \
+  --lang zh \
+  --output-dir /mnt/d/prompts \
+  --accumulate
+```
+
+> **참고:**
+> - 방식 1(JoyCaption)은 `--lang zh`를 지정해도 무시된다. JoyCaption은 영어 전용 모델이다.
+> - 방식 3에서는 Pass 1 JoyCaption 캡션(`_raw`)이 항상 영어로 생성되고, Pass 2 Qwen 변환 결과(`_final`)만 중국어로 출력된다.
+> - 기본값은 `en` (영어)이며, 옵션 미지정 시 동일하게 영어로 동작한다.
+
+---
+
+### 예제 I: bf16 고품질 모드 (VRAM 여유 시)
 
 ```bash
 python3 prompt_generator.py /mnt/d/images/photo.jpg \
@@ -464,7 +493,7 @@ python3 prompt_generator.py /mnt/d/images/photo.jpg \
 
 ---
 
-### 예제 I: JoyCaption straightforward 모드
+### 예제 J: JoyCaption straightforward 모드
 
 간결하고 명확한 스타일 프롬프트가 필요할 때.
 
@@ -490,6 +519,8 @@ python3 prompt_generator.py /mnt/d/images \
 | 최고 품질, 최종만 하나로 | 3 | 누적 | `--method 3 -o DIR -a` |
 | Z-Image Turbo LoRA 단독 | 2 | 개별 | `--method 2 -o 이미지폴더` |
 | Z-Image Turbo + Qwen-Image LoRA 동시 | 3 | 개별 | `--method 3 -o 이미지폴더` |
+| 중국어 프롬프트, 단일 이미지 | 2 | — | `--method 2 --lang zh` |
+| 중국어 프롬프트, 폴더 배치 | 3 | 누적 | `--method 3 --lang zh -o DIR -a` |
 
 ---
 
