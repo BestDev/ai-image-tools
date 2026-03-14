@@ -181,6 +181,8 @@ def build_cmd(tool: str, params: dict):
         ]
         if accumulate:
             cmd.append("--accumulate")
+        if bool(params.get("uncensored", False)):
+            cmd.append("--uncensored")
 
         imgs = (len([p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT])
                 if path.is_dir() else 1)

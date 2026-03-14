@@ -540,6 +540,11 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           <label for="p-accum">이어서 실행 (--accumulate)</label>
           <span class="tip" data-tip="이미 생성된 항목은 건너뛰고 나머지만 처리&#10;중단된 작업을 재개하거나, 이미지 추가 후 나머지만 처리할 때">?</span>
         </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="p-uncensored">
+          <label for="p-uncensored">검열 없음 (--uncensored)</label>
+          <span class="tip" data-tip="모델에 비검열 시스템 프롬프트를 추가하여 묘사 거부나 순화 없이 시각 콘텐츠를 있는 그대로 출력&#10;AI 훈련 데이터 생성용">?</span>
+        </div>
       </div>
 
       <!-- ══ HEIC 변환 ══ -->
@@ -1102,6 +1107,7 @@ function getFormData() {
       quant:        document.getElementById('p-quant').value,
       lang:         model === 'joycaption' ? 'en' : document.getElementById('p-lang').value,
       accumulate:   document.getElementById('p-accum').checked,
+      uncensored:   document.getElementById('p-uncensored').checked,
     };
   }
   if (currentTool === 'heic') {
@@ -1687,7 +1693,8 @@ function describeRun(params) {
     if (params.two_pass)  parts.push('2-pass');
     if (params.quant)     parts.push(params.quant);
     if (params.lang)      parts.push(params.lang);
-    if (params.accumulate) parts.push('이어서');
+    if (params.accumulate)  parts.push('이어서');
+    if (params.uncensored)  parts.push('비검열');
     if (params.input_folder) parts.push(params.input_folder);
     return '프롬프트 생성 | ' + parts.join(' · ');
   }
