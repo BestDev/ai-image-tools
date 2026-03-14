@@ -9,7 +9,9 @@ AI 이미지 학습 데이터셋 준비를 위한 통합 도구 모음.
 
 | 도구 | 설명 | 문서 |
 |------|------|------|
-| **prompt_generator_v2** | 이미지→프롬프트 자동 생성 (9가지 방식) | [docs/prompt_generator_v2_guide.md](docs/prompt_generator_v2_guide.md) |
+| **prompt_generator_v2** | 이미지→프롬프트 자동 생성 (11가지 방식, 로컬 LLM + Gemini API) | [docs/prompt_generator_v2_guide.md](docs/prompt_generator_v2_guide.md) |
+| **gemini_batch** | Gemini CLI 헤드리스 배치 분석 (API 키 없이 구독 사용) | [docs/gemini_batch_guide.md](docs/gemini_batch_guide.md) |
+| **to_wildcard** | prompts.txt → ComfyUI 와일드카드 형식 변환 | [docs/to_wildcard_guide.md](docs/to_wildcard_guide.md) |
 | **image_classifier** | 이미지 자동 분류 (화풍 / 배경 / 인물 수) | [docs/image_classifier_guide.md](docs/image_classifier_guide.md) |
 | **heic_to_jpeg** | iPhone HEIC 이미지 일괄 JPEG 변환 | [docs/heic_to_jpeg_guide.md](docs/heic_to_jpeg_guide.md) |
 | **extract_clothing** | 프롬프트에서 의상 항목 자동 추출 | — |
@@ -65,6 +67,12 @@ python3 web_ui.py
 # 프롬프트 생성 (방식 2 - Qwen3-VL, 영어)
 python3 scripts/prompt_generator_v2.py image/dataset --output-dir output/out --method 2 --lang en
 
+# 프롬프트 생성 (Gemini CLI 배치, GPU 불필요)
+python3 scripts/gemini_batch.py image/dataset -o output/out --model flash
+
+# prompts_raw.txt → ComfyUI 와일드카드 변환
+python3 scripts/to_wildcard.py output/out/prompts_raw.txt
+
 # HEIC → JPEG 변환
 python3 scripts/heic_to_jpeg.py image/iphone_photos --quality 95
 
@@ -87,7 +95,9 @@ image-classifier/
 ├── venv-prompt/           # Python 가상환경 (git 제외)
 ├── venv-classifier/       # 분류용 가상환경 (git 제외)
 ├── scripts/               # CLI 스크립트
-│   ├── prompt_generator_v2.py   # 프롬프트 생성 메인
+│   ├── prompt_generator_v2.py   # 프롬프트 생성 (11가지 방식)
+│   ├── gemini_batch.py          # Gemini CLI 헤드리스 배치
+│   ├── to_wildcard.py           # ComfyUI 와일드카드 변환
 │   ├── image_classifier.py      # 이미지 분류
 │   ├── heic_to_jpeg.py          # HEIC 변환
 │   ├── extract_clothing.py      # 의상 추출
@@ -96,6 +106,8 @@ image-classifier/
 │   └── test_qwen35.py           # Qwen3.5 단독 테스트
 ├── docs/                  # 사용 가이드 문서
 │   ├── prompt_generator_v2_guide.md
+│   ├── gemini_batch_guide.md
+│   ├── to_wildcard_guide.md
 │   ├── image_classifier_guide.md
 │   ├── heic_to_jpeg_guide.md
 │   └── z-image-turbo-prompt-guide.md
@@ -112,6 +124,8 @@ image-classifier/
 
 ## 프롬프트 생성 방식 비교
 
+### 로컬 모델 (GPU 필요)
+
 | 방식 | 모델 | 언어 | VRAM | 특징 |
 |------|------|------|------|------|
 | 1 | JoyCaption Beta One | EN | ~10GB | 영어 전용, 안정적 |
@@ -123,6 +137,14 @@ image-classifier/
 | 7 | Huihui-Qwen3.5 (검열 해제) | EN/ZH | ~18GB | 성인 이미지 포함 가능 |
 | 8 | JoyCaption → Huihui-Qwen3-VL | EN/ZH | ~16GB | 2-pass 정제 (검열 해제) |
 | 9 | JoyCaption → Huihui-Qwen3.5 | EN/ZH | ~18GB | 2-pass 정제 (검열 해제) |
+
+### 클라우드 API (GPU 불필요)
+
+| 방식 / 도구 | 모델 | 언어 | 인증 | 특징 |
+|------------|------|------|------|------|
+| 10 (prompt_generator_v2) | Gemini 3 Flash | EN/ZH | 유료 API 키 | RPD 10K, 고품질 |
+| 11 (prompt_generator_v2) | Gemini 3.1 Flash-Lite | EN/ZH | 유료 API 키 | RPD 150K, 대용량 |
+| gemini_batch.py | Gemini CLI (flash/pro) | EN/ZH | Google 계정 구독 | API 키 불필요 |
 
 자세한 내용: [docs/prompt_generator_v2_guide.md](docs/prompt_generator_v2_guide.md)
 
