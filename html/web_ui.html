@@ -1669,14 +1669,25 @@ const MODEL_LABELS = {
   qwen3vl: 'Qwen3-VL', qwen35: 'Qwen3.5',
   huihui_vl: 'HuiHui-VL', huihui_35: 'HuiHui-35', joycaption: 'JoyCaption',
 };
+const PROMPT_METHOD_MAP = {
+  'joycaption-false':1,'qwen3vl-false':2,'qwen35-false':3,
+  'qwen3vl-true':4,'qwen35-true':5,
+  'huihui_vl-false':6,'huihui_35-false':7,
+  'huihui_vl-true':8,'huihui_35-true':9,
+};
 function describeRun(params) {
   if (!params) return '';
   const t = params.tool || 'prompt';
   if (t === 'prompt') {
-    const parts = [MODEL_LABELS[params.model] || params.model];
-    if (params.two_pass) parts.push('2-pass');
-    parts.push(params.quant || 'bf16');
-    if (params.lang && params.lang !== 'en') parts.push(params.lang);
+    const key = `${params.model}-${!!params.two_pass}`;
+    const method = PROMPT_METHOD_MAP[key];
+    const parts = [];
+    if (method)           parts.push(`M${method}`);
+    parts.push(MODEL_LABELS[params.model] || params.model);
+    if (params.two_pass)  parts.push('2-pass');
+    if (params.quant)     parts.push(params.quant);
+    if (params.lang)      parts.push(params.lang);
+    if (params.accumulate) parts.push('이어서');
     if (params.input_folder) parts.push(params.input_folder);
     return '프롬프트 생성 | ' + parts.join(' · ');
   }
