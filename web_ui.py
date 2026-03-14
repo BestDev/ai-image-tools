@@ -172,7 +172,7 @@ def build_cmd(tool: str, params: dict):
                     accumulate = True
 
         cmd = [
-            VENV_PY, str(BASE_DIR / "scripts" / "prompt_generator_v2.py"),
+            VENV_PY, "-u", str(BASE_DIR / "scripts" / "prompt_generator_v2.py"),
             str(path),
             "--output-dir", output_dir,
             "--method", str(method),
@@ -191,7 +191,7 @@ def build_cmd(tool: str, params: dict):
         folder = params.get("input_dir", "image/dataset")
         path = (BASE_DIR / folder).resolve()
         cmd = [
-            VENV_PY, str(BASE_DIR / "scripts" / "heic_to_jpeg.py"), str(path),
+            VENV_PY, "-u", str(BASE_DIR / "scripts" / "heic_to_jpeg.py"), str(path),
             "--quality", str(params.get("quality", 95)),
         ]
         if params.get("keep"):      cmd.append("--keep")
@@ -206,7 +206,7 @@ def build_cmd(tool: str, params: dict):
         folder = params.get("input_dir", "image/dataset")
         path = (BASE_DIR / folder).resolve()
         by = params.get("by", "style")
-        cmd = [VENV_PY, str(BASE_DIR / "scripts" / "image_classifier.py"), str(path), "--by", by]
+        cmd = [VENV_PY, "-u", str(BASE_DIR / "scripts" / "image_classifier.py"), str(path), "--by", by]
         if params.get("file_op") == "move":    cmd.append("--move")
         elif params.get("file_op") == "copy":  cmd.append("--copy")
         if params.get("output_dir"): cmd += ["--output-dir", params["output_dir"]]
@@ -224,7 +224,7 @@ def build_cmd(tool: str, params: dict):
         inp  = params.get("input_path", "prompts")
         out  = params.get("output_path", "output")
         cmd = [
-            VENV_PY, str(BASE_DIR / "scripts" / "extract_clothing.py"),
+            VENV_PY, "-u", str(BASE_DIR / "scripts" / "extract_clothing.py"),
             "--mode", mode,
             "--input", inp,
             "--output", out,
