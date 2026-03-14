@@ -257,13 +257,12 @@ def run_qwen3vl_image(image_path: str, model, processor, lang: str = "en", uncen
 
     pil_image = Image.open(image_path).convert("RGB")
     prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
-    messages = []
     if uncensored:
-        messages.append({"role": "system", "content": [{"type": "text", "text": UNCENSORED_SYSTEM}]})
-    messages.append({"role": "user", "content": [
+        prompt = UNCENSORED_SYSTEM + "\n\n" + prompt
+    messages = [{"role": "user", "content": [
         {"type": "image", "image": pil_image},
         {"type": "text", "text": prompt},
-    ]})
+    ]}]
 
     inputs = processor.apply_chat_template(
         messages, tokenize=True, add_generation_prompt=True,
@@ -286,10 +285,9 @@ def run_qwen3vl_refine(raw_text: str, model, processor, lang: str = "en", uncens
 
     template = REFINE_PROMPT_ZH if lang == "zh" else REFINE_PROMPT_EN
     prompt = template.format(raw=raw_text)
-    messages = []
     if uncensored:
-        messages.append({"role": "system", "content": [{"type": "text", "text": UNCENSORED_REFINE_SYSTEM}]})
-    messages.append({"role": "user", "content": [{"type": "text", "text": prompt}]})
+        prompt = UNCENSORED_REFINE_SYSTEM + "\n\n" + prompt
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
 
     inputs = processor.apply_chat_template(
         messages, tokenize=True, add_generation_prompt=True,
@@ -358,13 +356,12 @@ def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncens
 
     pil_image = Image.open(image_path).convert("RGB")
     prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
-    messages = []
     if uncensored:
-        messages.append({"role": "system", "content": [{"type": "text", "text": UNCENSORED_SYSTEM}]})
-    messages.append({"role": "user", "content": [
+        prompt = UNCENSORED_SYSTEM + "\n\n" + prompt
+    messages = [{"role": "user", "content": [
         {"type": "image", "image": pil_image},
         {"type": "text", "text": prompt},
-    ]})
+    ]}]
 
     inputs = _qwen35_inputs(messages, processor, model)
     with torch.no_grad():
@@ -387,10 +384,9 @@ def run_qwen35_refine(raw_text: str, model, processor, lang: str = "en", uncenso
 
     template = REFINE_PROMPT_ZH if lang == "zh" else REFINE_PROMPT_EN
     prompt = template.format(raw=raw_text)
-    messages = []
     if uncensored:
-        messages.append({"role": "system", "content": [{"type": "text", "text": UNCENSORED_REFINE_SYSTEM}]})
-    messages.append({"role": "user", "content": [{"type": "text", "text": prompt}]})
+        prompt = UNCENSORED_REFINE_SYSTEM + "\n\n" + prompt
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
 
     inputs = _qwen35_inputs(messages, processor, model)
     with torch.no_grad():
