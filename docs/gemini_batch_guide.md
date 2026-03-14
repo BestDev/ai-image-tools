@@ -158,20 +158,28 @@ prompts/
 └── prompts.txt
 ```
 
-### 누적 파일 (`prompts.txt`) 형식
+### 누적 파일 (`prompts.txt`) 형식 — 한 줄 = 한 프롬프트
+
+모델 출력의 내부 줄바꿈을 공백으로 압축하여 **한 줄에 하나의 프롬프트**를 기록한다.
 
 ```
-# photo001.jpg
 A young woman in a fitted white satin mini dress stands facing the camera...
-
-# photo002.jpg
 An interior living room with exposed concrete walls and warm tungsten lighting...
-
+A young woman sits on a wooden boat with a deep V-neck white satin dress...
 ```
 
-- 이미지 파일명이 `#` 헤더로 구분됨
-- 성공한 이미지만 누적됨
-- 배치 재실행 시 기존 내용 뒤에 이어서 추가(append)
+- 줄 수 = 이미지 수 (1:1 대응)
+- ComfyUI 와일드카드 형식과 동일 → 직접 사용 가능
+- 성공한 이미지만 누적, 배치 재실행 시 기존 내용 뒤에 이어서 추가(append)
+
+### ComfyUI 와일드카드 변환
+
+`prompts.txt`는 이미 와일드카드 형식이다. 개별 `.txt` 파일(단락 구조 보존)을 변환할 때는 `to_wildcard.py`를 사용한다.
+
+```bash
+python3 scripts/to_wildcard.py output/폴더/prompts.txt
+# → output/폴더/prompts-wildcard.txt 생성 (이미 단일 줄이므로 그대로 복사됨)
+```
 
 ### 실패 로그 (`.err`)
 

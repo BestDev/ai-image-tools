@@ -1,6 +1,6 @@
 # prompt_generator_v2.py 사용 가이드
 
-> 최종 업데이트: 2026-03-16
+> 최종 업데이트: 2026-03-15
 > 환경: WSL2 / Ubuntu-24.04 / RTX 4090 24GB / Python 3.12
 > 가상환경: `<저장소 루트>/venv-prompt`
 > 검증 상태: transformers 5.2.0 / bitsandbytes 0.49.2 / GPU 실행 확인
@@ -24,8 +24,8 @@
 
 ## 1. 개요
 
-이미지를 분석하여 **Z-Image Turbo에 최적화된 서술형 프롬프트**를 자동 생성한다.  
-v2는 9가지 방식을 단일 스크립트로 통합하였으며, 누적 재개(`--accumulate`) 기능을 지원한다.
+이미지를 분석하여 **Z-Image Turbo에 최적화된 서술형 프롬프트**를 자동 생성한다.
+v2는 11가지 방식을 단일 스크립트로 통합하였으며, 누적 재개(`--accumulate`) 기능을 지원한다.
 
 ### 지원 방식
 
@@ -40,6 +40,8 @@ v2는 9가지 방식을 단일 스크립트로 통합하였으며, 누적 재개
 | 7 | Huihui-Qwen3.5 (✦검열 해제) | EN / ZH | ~18 GB | 이미지 직접 분석, 필터 없음 |
 | 8 | JoyCaption → Huihui-Qwen3-VL | EN / ZH | ~16 GB | 2-pass 정제, 검열 해제 |
 | 9 | JoyCaption → Huihui-Qwen3.5 | EN / ZH | ~18 GB | 2-pass 정제, 검열 해제 |
+| 10 | Gemini 3 Flash (☁ API) | EN / ZH | 없음 | 클라우드 API, GPU 불필요 |
+| 11 | Gemini 3.1 Flash-Lite (☁ API) | EN / ZH | 없음 | 클라우드 API, 대용량 배치 |
 
 ### 지원 이미지 형식
 
@@ -108,11 +110,12 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 |------|------|--------|------|
 | `input` | — | 필수 | 이미지 파일 또는 폴더 경로 |
 | `--output-dir` | `-o` | 필수 | 출력 폴더 경로 |
-| `--method` | `-m` | `2` | 방식 선택 (1~9) |
+| `--method` | `-m` | `2` | 방식 선택 (1~11) |
 | `--lang` | — | `en` | 출력 언어: `en` (영어) / `zh` (중국어) |
-| `--quant` | — | `bf16` | 양자화: `bf16` / `nf4` / `int8` |
+| `--quant` | — | `bf16` | 양자화: `bf16` / `nf4` / `int8` (로컬 모델 전용) |
 | `--accumulate` | `-a` | off | 누적 재개 모드 (기존 결과 유지, 미완성분만 처리) |
 | `--uncensored` | — | off | 비검열 모드: 모델에 비검열 지시문 주입, 거부/순화 없이 묘사 |
+| `--gemini-key` | — | — | Gemini API 키 (method 10/11 전용, `GEMINI_API_KEY` 환경변수로도 설정 가능) |
 
 ### `--quant` 옵션
 
@@ -162,6 +165,35 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 - 영어/중국어 지원
 - 속도: ~5.8 + 9.1 = 14.9초/장 (1단계 캐시 시 9.1초/장)
 
+### Method 10 — Gemini 3 Flash (클라우드 API)
+
+- 모델: `gemini-3-flash-preview`
+- GPU 불필요, Gemini API 키 필수 (`--gemini-key` 또는 `GEMINI_API_KEY`)
+- 영어/중국어 지원
+- RPD 10,000 / TPM 2,000,000
+- 비용: $0.50 / $3.00 per 1M tokens (입력/출력)
+- 특징: 클라우드 추론, 사내 Thinking 기능으로 2-pass 불필요
+
+### Method 11 — Gemini 3.1 Flash-Lite (클라우드 API)
+
+- 모델: `gemini-3.1-flash-lite-preview`
+- GPU 불필요, Gemini API 키 필수
+- 영어/중국어 지원
+- RPD 150,000 / TPM 4,000,000 (대용량 배치에 최적)
+- 비용: $0.25 / $1.50 per 1M tokens (입력/출력)
+- 특징: 저비용 대용량 처리, 속도 빠름
+
+```bash
+# Gemini API 키 환경변수 설정
+export GEMINI_API_KEY="your-api-key"
+
+# Method 10
+python3 prompt_generator_v2.py image/dataset -o output/gemini --method 10
+
+# Method 11 (대용량)
+python3 prompt_generator_v2.py image/dataset -o output/gemini --method 11 --lang zh
+```
+
 ---
 
 ## 6. 출력 파일 구조
@@ -169,18 +201,50 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 ```
 <출력폴더>/
 ├── prompts.txt       # 최종 프롬프트 (모든 방식)
-└── prompts_raw.txt   # JoyCaption raw 캡션 (method 1, 4, 5만 생성)
+└── prompts_raw.txt   # JoyCaption raw 캡션 (method 1, 4, 5, 8, 9만 생성)
 ```
 
-**파일 형식**: 프롬프트 1개당 1줄, 항목 사이 빈 줄로 구분
+### prompts.txt — 한 줄 = 한 프롬프트
+
+모델 출력의 내부 줄바꿈을 공백으로 압축하여 **한 줄에 하나의 프롬프트**를 기록한다.
+
+```
+A young woman with long pink hair sits gracefully...
+A mystical woman stands in a dimly lit stone chamber...
+An interior living room with warm tungsten lighting...
+```
+
+- 줄 수 = 이미지 수 (1:1 대응, 파싱 오류 없음)
+- ComfyUI 와일드카드 형식과 동일 → 직접 사용 가능
+- `to_wildcard.py` 변환 불필요
+
+### prompts_raw.txt — 단락 구조 보존, `---` 구분자
+
+모델이 출력한 단락 구조를 그대로 보존한다. 프롬프트 사이는 `---`로 구분된다.
 
 ```
 A young woman with long pink hair sits gracefully...
 
+Her dress is made of white satin...
+---
 A mystical woman stands in a dimly lit stone chamber...
-
-...
 ```
+
+- 가독성용 원본 보존 파일
+- 2-pass 방식에서 Pass 2의 입력으로 재사용됨
+- ComfyUI 와일드카드로 변환하려면 `to_wildcard.py` 사용
+
+### ComfyUI 와일드카드 변환
+
+`prompts.txt`는 이미 와일드카드 형식이므로 직접 사용 가능하다.
+구버전 출력(빈 줄 구분) 또는 `prompts_raw.txt`를 변환할 때는 `to_wildcard.py`를 사용한다.
+
+```bash
+python3 scripts/to_wildcard.py output/폴더/prompts_raw.txt
+# → output/폴더/prompts-wildcard.txt 생성
+```
+
+자세한 내용은 [`to_wildcard_guide.md`](to_wildcard_guide.md) 참고.
 
 ---
 
