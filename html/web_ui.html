@@ -310,6 +310,8 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
   transition: opacity .15s; font-weight: 400;
 }
 .tip:hover::after { opacity: 1; }
+/* 왼쪽 패널 툴팁: 오른쪽으로 펼침 */
+.panel-left .tip::after { left: 0; transform: none; }
 
 /* ── 숨기기 ── */
 .hidden { display: none !important; }
@@ -777,15 +779,63 @@ function switchTab(tool) {
   }
 }
 
-// ─── 방식 변경 ──────────────────────────────────────────
-function onMethodChange() {
-  const m = document.getElementById('p-method').value;
-  document.getElementById('method-desc').textContent = METHOD_DESC[m] || '';
-  const langSel = document.getElementById('p-lang');
-  langSel.disabled = (m === '1');
-  if (m === '1') langSel.value = 'en';
+// ─── 모델 설명 ─────────────────────────────────────────
+const MODEL_INFO = {
+  qwen3vl:    '방식 2 — 이미지를 직접 분析. 빠르고 안정적. VRAM ~16GB.',
+  qwen35:     '방식 3 — 이미지를 직접 분析. 더 상세한 묘사. VRAM ~18GB.',
+  huihui_vl:  '방식 6 — Qwen3-VL 검열 해제 버전. 성인 이미지 포함 모든 콘텐츠 묘사 가능.',
+  huihui_35:  '방식 7 — Qwen3.5 검열 해제 버전. 성인 이미지 포함 모든 콘텐츠 묘사 가능.',
+  joycaption: '방식 1 — 영어 캡션만 생성. 2-Pass 워크플로우의 1단계로 먼저 실행 시 사용.',
+};
+const MODEL_INFO_2PASS = {
+  qwen3vl:   '방식 4 — JoyCaption 캡션을 Qwen3-VL이 정제하여 최종 프롬프트 생성.',
+  qwen35:    '방식 5 — JoyCaption 캡션을 Qwen3.5가 정제하여 최종 프롬프트 생성.',
+  huihui_vl: '방식 8 — JoyCaption 캡션을 Huihui-Qwen3-VL(검열 해제)이 정제.',
+  huihui_35: '방식 9 — JoyCaption 캡션을 Huihui-Qwen3.5(검열 해제)이 정제.',
+};
+
+function selectModel(el) {
+  selectRadio(el);
+  const model = el.dataset.val;
+  const twopass = document.getElementById('p-twopass').checked;
+  const info = twopass && model !== 'joycaption' ? MODEL_INFO_2PASS[model] : MODEL_INFO[model];
+  document.getElementById('model-desc').textContent = info || '';
+  // JoyCaption: 2-pass 섹션 숨김, 언어 비활성화
+  const isJoy = model === 'joycaption';
+  document.getElementById('twopass-section').classList.toggle('hidden', isJoy);
+  document.getElementById('p-lang-row').classList.toggle('hidden', isJoy);
+  if (isJoy) {
+    document.getElementById('p-twopass').checked = false;
+    document.getElementById('twopass-opts').classList.add('hidden');
+  }
 }
-onMethodChange();
+
+function onTwoPassChange() {
+  const checked = document.getElementById('p-twopass').checked;
+  document.getElementById('twopass-opts').classList.toggle('hidden', !checked);
+  // 설명 업데이트
+  const model = document.querySelector('[data-group="p-model"].selected')?.dataset.val || 'qwen3vl';
+  const info = checked ? MODEL_INFO_2PASS[model] : MODEL_INFO[model];
+  document.getElementById('model-desc').textContent = info || '';
+}
+
+function toggleRawPath() {
+  const src = document.querySelector('[data-group="raw-src"].selected')?.dataset.val;
+  document.getElementById('raw-path-row').classList.toggle('hidden', src !== 'existing');
+}
+
+async function checkRawPath() {
+  const p = document.getElementById('p-rawpath').value.trim();
+  const el = document.getElementById('p-rawpath-status');
+  if (!p) return;
+  const r = await fetch(`/api/scan?folder=${encodeURIComponent(p)}&type=txt`);
+  const d = await r.json();
+  el.className = 'count-badge visible' + (d.exists ? '' : ' error');
+  el.textContent = d.exists ? `✓ 파일 확인됨` : '파일을 찾을 수 없습니다';
+}
+
+// 초기화
+document.querySelector('[data-group="p-model"].selected') && selectModel(document.querySelector('[data-group="p-model"].selected'));
 
 // ─── 분류 기준 변경 ─────────────────────────────────────
 function onClassifierByChange() {
@@ -838,13 +888,19 @@ function clearCount(id) {
 // ─── 폼 데이터 수집 ─────────────────────────────────────
 function getFormData() {
   if (currentTool === 'prompt') {
+    const model    = document.querySelector('[data-group="p-model"].selected')?.dataset.val || 'qwen3vl';
+    const twoPass  = document.getElementById('p-twopass').checked && model !== 'joycaption';
+    const rawSrc   = document.querySelector('[data-group="raw-src"].selected')?.dataset.val || 'auto';
     return {
       tool:         'prompt',
       input_folder: document.getElementById('p-input').value.trim(),
       output_dir:   document.getElementById('p-output').value.trim() || null,
-      method:       document.getElementById('p-method').value,
+      model,
+      two_pass:     twoPass,
+      raw_source:   twoPass ? rawSrc : 'auto',
+      raw_path:     rawSrc === 'existing' ? document.getElementById('p-rawpath').value.trim() : '',
       quant:        document.getElementById('p-quant').value,
-      lang:         document.getElementById('p-lang').value,
+      lang:         model === 'joycaption' ? 'en' : document.getElementById('p-lang').value,
       accumulate:   document.getElementById('p-accum').checked,
     };
   }

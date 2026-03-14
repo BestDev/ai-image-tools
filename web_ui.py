@@ -79,9 +79,42 @@ def build_cmd(tool: str, params: dict):
     if tool == "prompt":
         folder = params.get("input_folder", "image/dataset")
         path = (BASE_DIR / folder).resolve()
-        method = int(params.get("method", 2))
+
+        # UI 파라미터 → method 번호 매핑
+        # model: qwen3vl | qwen35 | huihui_vl | huihui_35 | joycaption
+        # two_pass: bool (JoyCaption → 선택 모델 정제)
+        model    = params.get("model", "qwen3vl")
+        two_pass = bool(params.get("two_pass", False))
+        METHOD_MAP = {
+            ("joycaption", False): 1,
+            ("qwen3vl",    False): 2,
+            ("qwen35",     False): 3,
+            ("qwen3vl",    True):  4,
+            ("qwen35",     True):  5,
+            ("huihui_vl",  False): 6,
+            ("huihui_35",  False): 7,
+            ("huihui_vl",  True):  8,
+            ("huihui_35",  True):  9,
+        }
+        method = METHOD_MAP.get((model, two_pass), 2)
+
         ts = datetime.now().strftime("%Y-%m-%d-%H%M%S")
         output_dir = params.get("output_dir") or f"logs/{ts}-m{method}"
+
+        accumulate = bool(params.get("accumulate", False))
+
+        # 기존 JoyCaption 파일 사용: output_dir에 복사 후 --accumulate
+        if two_pass and params.get("raw_source") == "existing":
+            raw_path = params.get("raw_path", "").strip()
+            if raw_path:
+                import shutil
+                src = Path(raw_path) if Path(raw_path).is_absolute() else (BASE_DIR / raw_path)
+                if src.exists():
+                    out_path = BASE_DIR / output_dir
+                    out_path.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(src), str(out_path / "prompts_raw.txt"))
+                    accumulate = True
+
         cmd = [
             VENV_PY, str(BASE_DIR / "scripts" / "prompt_generator_v2.py"),
             str(path),
@@ -90,8 +123,9 @@ def build_cmd(tool: str, params: dict):
             "--quant", params.get("quant", "bf16"),
             "--lang", params.get("lang", "en"),
         ]
-        if params.get("accumulate"):
+        if accumulate:
             cmd.append("--accumulate")
+
         imgs = (len([p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT])
                 if path.is_dir() else 1)
         return cmd, imgs, output_dir

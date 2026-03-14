@@ -735,6 +735,116 @@ def run_method7(images: list, args):
     unload(model, processor)
     _print_stats(timings, len(images) + done)
 
+def run_method8(images: list, args):
+    """JoyCaption raw → Huihui-Qwen3-VL-8B abliterated 정제 (2-pass)"""
+    out_dir = Path(args.output_dir)
+    raw_file = out_dir / "prompts_raw.txt"
+    out_file = out_dir / "prompts.txt"
+    total = len(images)
+    if not args.accumulate:
+        _clear_file(raw_file)
+        _clear_file(out_file)
+    raw_done = _count_prompts(raw_file) if args.accumulate else 0
+    if raw_done < total:
+        print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
+        joy_model, joy_proc = load_joycaption(args.quant)
+        print(f"VRAM: {_vram_info()}\n")
+        timings = []
+        for i, img_path in enumerate(images[raw_done:], raw_done):
+            print(f"  [{i+1}/{total}] {Path(img_path).name}")
+            t = time.time()
+            try:
+                raw = run_joycaption(img_path, joy_model, joy_proc)
+                elapsed = time.time() - t
+                timings.append(elapsed)
+                print(f"    완료 ({elapsed:.1f}초)")
+                _append_prompt(raw_file, raw, i)
+            except Exception as e:
+                print(f"    오류: {e}")
+        unload(joy_model, joy_proc)
+        _print_stats(timings, total, label="Pass 1")
+    else:
+        print(f"\n[Pass 1/2] 완료 — prompts_raw.txt {total}개 복원")
+    raws = _read_prompts(raw_file)
+    final_done = _count_prompts(out_file) if args.accumulate else 0
+    if final_done >= total:
+        print(f"[Pass 2/2] 이미 완료 ({total}개)")
+        return
+    print(f"\n[Pass 2/2] Huihui-Qwen3-VL abliterated 정제 ({final_done}/{total} 완료)")
+    qvl_model, qvl_proc = load_qwen3vl(args.quant, MODEL_QWEN3VL_AB)
+    print(f"VRAM: {_vram_info()}\n")
+    timings = []
+    for i, (img_path, raw) in enumerate(list(zip(images, raws))[final_done:], final_done):
+        print(f"  [{i+1}/{total}] {Path(img_path).name}")
+        t = time.time()
+        try:
+            result = run_qwen3vl_refine(raw, qvl_model, qvl_proc, lang=args.lang)
+            elapsed = time.time() - t
+            timings.append(elapsed)
+            print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
+            print(f"    {result[:120]}{\'...\' if len(result) > 120 else \'\'}")
+            _append_prompt(out_file, result, i)
+        except Exception as e:
+            print(f"    오류: {e}")
+    unload(qvl_model, qvl_proc)
+    _print_stats(timings, total, label="Pass 2")
+
+
+def run_method9(images: list, args):
+    """JoyCaption raw → Huihui-Qwen3.5-9B abliterated 정제 (2-pass)"""
+    out_dir = Path(args.output_dir)
+    raw_file = out_dir / "prompts_raw.txt"
+    out_file = out_dir / "prompts.txt"
+    total = len(images)
+    if not args.accumulate:
+        _clear_file(raw_file)
+        _clear_file(out_file)
+    raw_done = _count_prompts(raw_file) if args.accumulate else 0
+    if raw_done < total:
+        print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
+        joy_model, joy_proc = load_joycaption(args.quant)
+        print(f"VRAM: {_vram_info()}\n")
+        timings = []
+        for i, img_path in enumerate(images[raw_done:], raw_done):
+            print(f"  [{i+1}/{total}] {Path(img_path).name}")
+            t = time.time()
+            try:
+                raw = run_joycaption(img_path, joy_model, joy_proc)
+                elapsed = time.time() - t
+                timings.append(elapsed)
+                print(f"    완료 ({elapsed:.1f}초)")
+                _append_prompt(raw_file, raw, i)
+            except Exception as e:
+                print(f"    오류: {e}")
+        unload(joy_model, joy_proc)
+        _print_stats(timings, total, label="Pass 1")
+    else:
+        print(f"\n[Pass 1/2] 완료 — prompts_raw.txt {total}개 복원")
+    raws = _read_prompts(raw_file)
+    final_done = _count_prompts(out_file) if args.accumulate else 0
+    if final_done >= total:
+        print(f"[Pass 2/2] 이미 완료 ({total}개)")
+        return
+    print(f"\n[Pass 2/2] Huihui-Qwen3.5 abliterated 정제 ({final_done}/{total} 완료)")
+    q35_model, q35_proc = load_qwen35(args.quant, MODEL_QWEN35_AB)
+    print(f"VRAM: {_vram_info()}\n")
+    timings = []
+    for i, (img_path, raw) in enumerate(list(zip(images, raws))[final_done:], final_done):
+        print(f"  [{i+1}/{total}] {Path(img_path).name}")
+        t = time.time()
+        try:
+            result = run_qwen35_refine(raw, q35_model, q35_proc, lang=args.lang)
+            elapsed = time.time() - t
+            timings.append(elapsed)
+            print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
+            print(f"    {result[:120]}{\'...\' if len(result) > 120 else \'\'}")
+            _append_prompt(out_file, result, i)
+        except Exception as e:
+            print(f"    오류: {e}")
+    unload(q35_model, q35_proc)
+    _print_stats(timings, total, label="Pass 2")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Z-Image Turbo 프롬프트 생성 v2",
@@ -743,7 +853,7 @@ def main():
     parser.add_argument("input", help="이미지 파일 또는 폴더 경로")
     parser.add_argument("--output-dir", "-o", required=True, help="출력 폴더 경로")
     parser.add_argument(
-        "--method", "-m", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7],
+        "--method", "-m", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9],
         help=(
             "1: JoyCaption (영어 전용)\n"
             "2: Qwen3-VL-8B 직접 분석\n"
@@ -751,7 +861,9 @@ def main():
             "4: JoyCaption → Qwen3-VL-8B 정제\n"
             "5: JoyCaption → Qwen3.5-9B 정제\n"
             "6: Huihui-Qwen3-VL-8B abliterated 직접 분석\n"
-            "7: Huihui-Qwen3.5-9B abliterated 직접 분석"
+            "7: Huihui-Qwen3.5-9B abliterated 직접 분석\n"
+            "8: JoyCaption → Huihui-Qwen3-VL abliterated 정제\n"
+            "9: JoyCaption → Huihui-Qwen3.5 abliterated 정제"
         ),
     )
     parser.add_argument(
@@ -802,6 +914,8 @@ def main():
         5: "JoyCaption → Qwen3.5-9B 정제",
         6: "Huihui-Qwen3-VL-8B abliterated 직접 분석",
         7: "Huihui-Qwen3.5-9B abliterated 직접 분석",
+        8: "JoyCaption → Huihui-Qwen3-VL abliterated 정제",
+        9: "JoyCaption → Huihui-Qwen3.5 abliterated 정제",
     }
 
     print(f"\n=== Z-Image Turbo 프롬프트 생성 v2 ===")
@@ -824,6 +938,8 @@ def main():
         5: run_method5,
         6: run_method6,
         7: run_method7,
+        8: run_method8,
+        9: run_method9,
     }
     dispatch[args.method](images, args)
 
@@ -832,3 +948,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# (appended by web_ui restructure)
