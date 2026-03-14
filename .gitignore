@@ -24,3 +24,14 @@ nul
 
 # Claude 내부
 .claude/
+
+# 이미지 폴더
+image/
+image/**/
+
+# 완료 폴더
+__complete/
+__complete/**/
+
+# 테스트 로그 결과
+logs/
