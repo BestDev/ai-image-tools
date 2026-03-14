@@ -781,6 +781,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
       <!-- 진행 카드 -->
       <div class="stat-card full-width" id="progressCard">
         <div class="stat-label">진행 상황</div>
+        <div id="runInfo" style="font-size:11.5px;color:var(--cyan);margin-bottom:5px;min-height:15px;word-break:break-all"></div>
         <div class="stat-value" id="progText">대기 중</div>
         <div class="current-file" id="currentFile"></div>
         <div class="progress-wrap">
@@ -1146,6 +1147,7 @@ async function startRun() {
   const data = getFormData();
   clearTerminal();
   resetProgress();
+  showRunInfo(data);
   setRunning(true);
 
   try {
@@ -1313,6 +1315,7 @@ function setStatus(state, label) {
 }
 
 function resetProgress() {
+  document.getElementById('runInfo').textContent    = '';
   document.getElementById('progText').textContent  = '준비 중…';
   document.getElementById('progBar').style.width   = '0%';
   document.getElementById('progCount').textContent = '';
@@ -1660,6 +1663,54 @@ async function removeFromQueue(id) {
   await fetch(`/api/queue/remove/${id}`, {method:'POST'});
   loadQueue();
 }
+
+// ─── 실행 정보 표시 ─────────────────────────────────────
+const MODEL_LABELS = {
+  qwen3vl: 'Qwen3-VL', qwen35: 'Qwen3.5',
+  huihui_vl: 'HuiHui-VL', huihui_35: 'HuiHui-35', joycaption: 'JoyCaption',
+};
+function describeRun(params) {
+  if (!params) return '';
+  const t = params.tool || 'prompt';
+  if (t === 'prompt') {
+    const parts = [MODEL_LABELS[params.model] || params.model];
+    if (params.two_pass) parts.push('2-pass');
+    parts.push(params.quant || 'bf16');
+    if (params.lang && params.lang !== 'en') parts.push(params.lang);
+    if (params.input_folder) parts.push(params.input_folder);
+    return '프롬프트 생성 | ' + parts.join(' · ');
+  }
+  if (t === 'heic')       return `HEIC 변환 | 품질 ${params.quality || 95}`;
+  if (t === 'classifier') return `이미지 분류 | ${params.by || 'style'}`;
+  if (t === 'clothing')   return `의상 추출 | ${params.mode || 'spacy'}`;
+  return t;
+}
+function showRunInfo(params) {
+  document.getElementById('runInfo').textContent = describeRun(params);
+}
+
+// ─── 큐 자동 스트림 연결 폴링 ────────────────────────────
+let _autoConnectedJobId = null;
+
+setInterval(async () => {
+  if (isRunning) return;
+  try {
+    const r = await fetch('/api/queue/list');
+    const {jobs} = await r.json();
+    const running = jobs.find(j => j.status === 'running' && j.run_id && j.id !== _autoConnectedJobId);
+    if (!running) return;
+    _autoConnectedJobId = running.id;
+    currentRunId = running.run_id;
+    clearTerminal();
+    resetProgress();
+    showRunInfo(running.params);
+    document.getElementById('outputPath').textContent = running.output_dir || '';
+    document.getElementById('outputCard').style.display = 'block';
+    setRunning(true);
+    connectStream(running.run_id, 0);
+    showToast('큐 작업 자동 연결 #' + running.id, 'success');
+  } catch {}
+}, 2000);
 
 // ─── 초기화 ─────────────────────────────────────────────
 // 시작 시 stats 한 번 불러오기
