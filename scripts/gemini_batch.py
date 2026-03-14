@@ -5,6 +5,13 @@ gemini_batch.py — Gemini CLI 헤드리스 배치 이미지 분석
 Gemini CLI를 subprocess로 호출하여 이미지 폴더를 배치 처리합니다.
 API 키 없이 Gemini CLI의 OAuth 인증(Google AI Pro 등)을 그대로 사용합니다.
 
+세션 모드(기본):
+  워밍업 호출로 페르소나를 확립하고 -r "latest" 로 세션을 이어가며
+  각 이미지에는 최소 지시문만 전달합니다. N장마다 세션을 리셋합니다.
+
+no-session 모드(--no-session):
+  매 이미지마다 전체 프롬프트를 전달하는 기존 방식으로 동작합니다.
+
 사용법:
   python3 gemini_batch.py <입력폴더> [옵션]
 
@@ -12,7 +19,8 @@ API 키 없이 Gemini CLI의 OAuth 인증(Google AI Pro 등)을 그대로 사용
   python3 gemini_batch.py ./photos
   python3 gemini_batch.py ./photos -o ./prompts --lang zh --model flash-lite
   python3 gemini_batch.py ./photos --delay 5 --skip-existing
-  python3 gemini_batch.py ./photos --collect-file all_prompts.txt
+  python3 gemini_batch.py ./photos --no-session          # 세션 없이 전체 프롬프트
+  python3 gemini_batch.py ./photos --reset-every 10      # 10장마다 세션 리셋
 """
 
 import argparse
@@ -21,6 +29,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+# shared_prompts.py 로드
+sys.path.insert(0, str(Path(__file__).parent))
+from shared_prompts import (
+    SYSTEM_PROMPT_EN, SYSTEM_PROMPT_ZH,
+    WARMUP_EN, WARMUP_ZH,
+    IMAGE_TASK_EN, IMAGE_TASK_ZH,
+)
 
 # ──────────────────────────────────────────────
 # 설정
@@ -38,70 +54,45 @@ MODEL_ALIASES = {
 }
 
 # ──────────────────────────────────────────────
-# 프롬프트
+# no-session 모드용 전체 프롬프트 빌더
+# (매 이미지마다 전체 지시문 포함)
 # ──────────────────────────────────────────────
-PROMPT_EN = (
-    "You are an expert in interpreting precise visual scenes. "
-    "Analyze the image at @{{IMAGE_PATH}} and produce a refined, high-fidelity English prompt "
-    "tailored to its primary subject (person, architectural space, natural landscape, or still-life object).\n\n"
-    "If the scene depicts architecture or interior space, describe the architectural style, "
-    "structural elements, materials, and spatial depth accurately. Do not invent human presence.\n\n"
-    "If the image represents a product or still-life object, emphasize surface qualities, "
-    "material reflections, textures, color harmony, and physical arrangement.\n\n"
-    "Only if people are clearly visible should you describe the following in detail. "
-    "If no people exist, omit all human-related language entirely.\n\n"
-    "For clothing: garment type and style, neckline shape and depth, sleeve length and cut, "
-    "hemline length, any cutouts or sheer and transparent panels, areas of bare skin exposure, "
-    "fabric texture and material (e.g., satin, lace, cotton), colors and patterns, "
-    "and all accessories including shoes, bags, jewelry, and hair accessories.\n\n"
-    "For pose: overall body orientation (facing camera, angled, turned away), head tilt and exact gaze direction, "
-    "shoulder position, arm and hand placement (e.g., arms raised, hands on hips, holding an object), "
-    "leg stance (standing straight, one leg forward, seated, crossed), and any body lean or weight shift.\n\n"
-    "Explain the lighting conditions, including the type of light source, shadow behavior, contrast, and atmospheric mood.\n\n"
-    "Describe composition and camera perspective, such as framing balance, lens choice, depth of field, and viewpoint.\n\n"
-    "Write a single, natural English paragraph of 80-250 words. "
-    "Avoid references to watermarks, symbols, or irrelevant text. "
-    "Output ONLY the prompt text with no preamble or explanation."
-)
-
-PROMPT_ZH = (
-    "你是专业的图像视觉分析专家，为文生图模型生成精准的中文提示词。"
-    "分析图像 @{{IMAGE_PATH}} ，根据主要主题（人物、建筑空间、自然风景或静物）输出高保真提示词。\n\n"
-    "若为建筑或室内空间：描述建筑风格、结构元素、材质及空间层次感，不虚构人物。\n"
-    "若为产品或静物：重点描述表面质感、材质反光、纹理、色彩搭配及物品排列。\n"
-    "若画面中有清晰可见的人物，详细描述以下内容；若无人物则完全省略人物描述：\n\n"
-    "服装细节：服装类型与款式、领口形状与深度、袖长与剪裁、裙摆或裤腿长度、"
-    "镂空或透视薄纱区域、裸露肌肤范围、面料质感与材质（缎面、蕾丝、棉质、针织等）、"
-    "颜色与花纹、全部配饰（鞋履、包袋、耳环、项链、手链、脚链、发饰等）。\n\n"
-    "姿势与体态：整体身体朝向（正对/侧身/背对镜头）、头部倾斜角度与视线方向、"
-    "肩部位置与角度、手臂及手部动作、腿部姿态、身体重心偏移方向、体态曲线与轮廓走势。\n\n"
-    "光线：光源类型与方向、阴影形态、色温、对比度与氛围。\n"
-    "构图：景别（特写/近景/半身/全身）、拍摄角度、景深与背景虚化。\n\n"
-    "用单段流畅自然的中文输出，字数150至400字，不提及水印、符号或无关文字。"
-    "只输出提示词本身，不加任何前言或说明。"
-)
-
-
-def build_prompt(image_path: Path, lang: str) -> str:
-    """이미지 절대경로를 @{...} 문법으로 삽입한 프롬프트 생성."""
+def _full_prompt_en(image_path: Path) -> str:
     abs_path = str(image_path.resolve())
-    template = PROMPT_ZH if lang == "zh" else PROMPT_EN
-    # {IMAGE_PATH} 자리에 실제 경로 삽입 (이중 중괄호로 이스케이프한 부분)
+    # SYSTEM_PROMPT_EN 에는 이미지 경로가 없으므로 앞에 붙이고 @{path} 를 추가
+    return (
+        SYSTEM_PROMPT_EN + "\n\n"
+        "Output ONLY the prompt text with no preamble or explanation.\n\n"
+        f"Analyze @{{{abs_path}}} and output the image prompt."
+    )
+
+
+def _full_prompt_zh(image_path: Path) -> str:
+    abs_path = str(image_path.resolve())
+    return (
+        SYSTEM_PROMPT_ZH + "\n\n"
+        "只输出提示词本身，不加任何前言或说明。\n\n"
+        f"分析 @{{{abs_path}}}，输出图像提示词。"
+    )
+
+
+def build_full_prompt(image_path: Path, lang: str) -> str:
+    """no-session 모드: 매 이미지에 전체 지시문 포함."""
+    return _full_prompt_zh(image_path) if lang == "zh" else _full_prompt_en(image_path)
+
+
+def build_image_task(image_path: Path, lang: str) -> str:
+    """session 모드: 세션 재개 후 각 이미지에 붙이는 최소 지시문."""
+    abs_path = str(image_path.resolve())
+    template = IMAGE_TASK_ZH if lang == "zh" else IMAGE_TASK_EN
     return template.replace("{IMAGE_PATH}", abs_path)
 
 
-def run_gemini(prompt: str, model: str, timeout: int) -> tuple[bool, str]:
-    """
-    gemini -p "<prompt>" --approval-mode=yolo -m <model> 를 실행하고
-    (성공여부, 출력텍스트) 를 반환합니다.
-    """
-    cmd = [
-        GEMINI_CLI,
-        "-p", prompt,
-        "--approval-mode=yolo",   # 헤드리스 배치에서 툴 승인 프롬프트 자동 통과
-        "-m", model,
-        "--output-format", "text",
-    ]
+# ──────────────────────────────────────────────
+# Gemini CLI 실행 헬퍼
+# ──────────────────────────────────────────────
+def _run_cmd(cmd: list[str], timeout: int) -> tuple[bool, str]:
+    """subprocess 실행 → (성공여부, 출력텍스트)"""
     try:
         result = subprocess.run(
             cmd,
@@ -120,6 +111,57 @@ def run_gemini(prompt: str, model: str, timeout: int) -> tuple[bool, str]:
         return False, f"[ERROR] gemini CLI not found at: {GEMINI_CLI}"
 
 
+def run_warmup(model: str, lang: str, timeout: int) -> tuple[bool, str]:
+    """
+    페르소나 확립 워밍업 호출.
+    성공하면 이후 -r "latest" 로 세션 재개 가능.
+    """
+    warmup = WARMUP_ZH if lang == "zh" else WARMUP_EN
+    cmd = [
+        GEMINI_CLI,
+        "-p", warmup,
+        "--approval-mode=yolo",
+        "-m", model,
+        "--output-format", "text",
+    ]
+    return _run_cmd(cmd, timeout)
+
+
+def run_gemini_session(image_path: Path, model: str, lang: str, timeout: int) -> tuple[bool, str]:
+    """
+    세션 재개(-r latest) + 최소 이미지 태스크 호출.
+    워밍업 이후에 사용합니다.
+    """
+    task = build_image_task(image_path, lang)
+    cmd = [
+        GEMINI_CLI,
+        "-r", "latest",
+        "-p", task,
+        "--approval-mode=yolo",
+        "-m", model,
+        "--output-format", "text",
+    ]
+    return _run_cmd(cmd, timeout)
+
+
+def run_gemini_full(image_path: Path, model: str, lang: str, timeout: int) -> tuple[bool, str]:
+    """
+    no-session 모드: 전체 프롬프트를 포함한 독립 호출.
+    """
+    prompt = build_full_prompt(image_path, lang)
+    cmd = [
+        GEMINI_CLI,
+        "-p", prompt,
+        "--approval-mode=yolo",
+        "-m", model,
+        "--output-format", "text",
+    ]
+    return _run_cmd(cmd, timeout)
+
+
+# ──────────────────────────────────────────────
+# 유틸
+# ──────────────────────────────────────────────
 def collect_images(input_dir: Path) -> list[Path]:
     images = []
     for ext in IMAGE_EXTENSIONS:
@@ -133,6 +175,9 @@ def output_path_for(image: Path, output_dir: Path | None) -> Path:
     return base / (image.stem + ".txt")
 
 
+# ──────────────────────────────────────────────
+# 메인
+# ──────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
         description="Gemini CLI 헤드리스 배치 이미지 분석",
@@ -155,6 +200,10 @@ def main():
                         help="실제 실행 없이 처리 목록만 출력")
     parser.add_argument("--collect-file", type=str, default="prompts.txt",
                         help="누적 프롬프트 파일명 (기본: prompts.txt). 빈 문자열로 비활성화")
+    parser.add_argument("--no-session", action="store_true",
+                        help="세션 없이 매 이미지마다 전체 프롬프트 전달 (기존 방식)")
+    parser.add_argument("--reset-every", type=int, default=25,
+                        help="세션 모드: N장마다 세션 리셋 (기본: 25, 0=리셋 없음)")
     args = parser.parse_args()
 
     # 입력 폴더 확인
@@ -183,12 +232,16 @@ def main():
     skipped = 0
     success = 0
     failed = 0
+    session_active = False  # 워밍업 성공 여부 추적
 
     # 누적 파일 경로 결정
     collect_path: Path | None = None
     if args.collect_file:
         collect_base = args.output_dir if args.output_dir else args.input_dir
         collect_path = collect_base / args.collect_file
+
+    session_mode = not args.no_session
+    reset_every = args.reset_every
 
     print(f"Gemini CLI 배치 시작")
     print(f"  입력폴더 : {args.input_dir.resolve()}")
@@ -198,7 +251,20 @@ def main():
     print(f"  언어     : {args.lang}")
     print(f"  총 이미지: {total}장")
     print(f"  대기시간 : {args.delay}초")
+    print(f"  세션모드 : {'ON (리셋 ' + (str(reset_every) + '장마다)' if reset_every > 0 else '없음)') if session_mode else 'OFF (전체 프롬프트)'}")
     print()
+
+    def do_warmup(idx: int) -> bool:
+        """워밍업 실행 후 결과 출력. 성공하면 True."""
+        print(f"  [WARMUP] 세션 초기화 중...", end="", flush=True)
+        ok, text = run_warmup(model, args.lang, args.timeout)
+        if ok:
+            preview = text[:50].replace("\n", " ")
+            print(f" OK  ({preview})")
+        else:
+            print(f" FAIL  {text}")
+            print(f"  [WARN] 워밍업 실패 — 전체 프롬프트 방식으로 폴백합니다.")
+        return ok
 
     for idx, image in enumerate(images, 1):
         out_txt = output_path_for(image, args.output_dir)
@@ -214,10 +280,24 @@ def main():
             print(f"{prefix} DRY   {image.name} -> {out_txt}")
             continue
 
+        # 세션 모드: 워밍업 / 리셋 타이밍 결정
+        if session_mode:
+            need_warmup = (
+                not session_active                                    # 첫 이미지
+                or (reset_every > 0 and (idx - 1) % reset_every == 0 and idx > 1)  # N장마다
+            )
+            if need_warmup:
+                if idx > 1:
+                    print()  # 줄바꿈 후 워밍업 구분
+                session_active = do_warmup(idx)
+
         print(f"{prefix} ...   {image.name}", end="", flush=True)
 
-        prompt = build_prompt(image, args.lang)
-        ok, text = run_gemini(prompt, model, args.timeout)
+        # 이미지 분석 호출
+        if session_mode and session_active:
+            ok, text = run_gemini_session(image, model, args.lang, args.timeout)
+        else:
+            ok, text = run_gemini_full(image, model, args.lang, args.timeout)
 
         if ok:
             out_txt.write_text(text, encoding="utf-8")
@@ -232,7 +312,10 @@ def main():
             success += 1
         else:
             print(f"\r{prefix} FAIL  {image.name}  |  {text}")
-            # 실패 로그도 저장 (재처리 판단용)
+            # 세션 실패 시 세션 상태 초기화 (다음 이미지에서 재워밍업)
+            if session_mode:
+                session_active = False
+            # 실패 로그 저장 (재처리 판단용)
             out_txt.with_suffix(".err").write_text(text, encoding="utf-8")
             failed += 1
 

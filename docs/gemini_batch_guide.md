@@ -13,10 +13,11 @@
 3. [실행 방법](#3-실행-방법)
 4. [옵션 상세](#4-옵션-상세)
 5. [출력 파일 구조](#5-출력-파일-구조)
-6. [모델 선택 기준](#6-모델-선택-기준)
-7. [쿼터 및 속도 설정](#7-쿼터-및-속도-설정)
-8. [실 사용 예제](#8-실-사용-예제)
-9. [트러블슈팅](#9-트러블슈팅)
+6. [세션 모드 (Session Warmup Chain)](#6-세션-모드-session-warmup-chain)
+7. [모델 선택 기준](#7-모델-선택-기준)
+8. [쿼터 및 속도 설정](#8-쿼터-및-속도-설정)
+9. [실 사용 예제](#9-실-사용-예제)
+10. [트러블슈팅](#10-트러블슈팅)
 
 ---
 
@@ -127,6 +128,8 @@ python3 scripts/gemini_batch.py ./photos --dry-run
 | `--skip-existing` | off | 이미 `.txt`가 존재하면 건너뜀 |
 | `--dry-run` | off | 실제 실행 없이 처리 목록만 출력 |
 | `--collect-file` | `prompts.txt` | 누적 프롬프트 파일명. `""` 로 비활성화 |
+| `--no-session` | off | 세션 없이 매 이미지마다 전체 프롬프트 전달 |
+| `--reset-every` | `25` | 세션 모드: N장마다 세션 리셋 (0=리셋 없음) |
 
 ---
 
@@ -191,7 +194,51 @@ photos/photo003.err    ← 에러 메시지
 
 ---
 
-## 6. 모델 선택 기준
+## 6. 세션 모드 (Session Warmup Chain)
+
+기본 동작(세션 모드)에서는 Gemini CLI의 `-r "latest"` 세션 재개 기능을 활용해 토큰을 절약하고 컨텍스트를 누적합니다.
+
+### 동작 원리
+
+```
+[워밍업] gemini -p "페르소나 확립 지시문" → 세션 시작
+[이미지 1] gemini -r "latest" -p "@{img1} 분석해줘" → 세션 재개
+[이미지 2] gemini -r "latest" -p "@{img2} 분석해줘" → 세션 재개
+...
+[N장 후] 새 워밍업 → 세션 리셋 (컨텍스트 초기화)
+```
+
+### 토큰 효율 비교
+
+| 방식 | 이미지당 토큰 | 컨텍스트 |
+|------|-------------|---------|
+| `--no-session` | 전체 지시문 (~400토큰) × N | 없음 |
+| 세션 모드 (기본) | 최소 태스크 (~10토큰) + 워밍업(1회/N장) | 누적 |
+
+### 세션 리셋 주기 조정
+
+```bash
+# 기본 (25장마다 리셋)
+python3 scripts/gemini_batch.py ./photos
+
+# 50장마다 리셋 (컨텍스트를 오래 유지)
+python3 scripts/gemini_batch.py ./photos --reset-every 50
+
+# 리셋 없음 (한 세션으로 전체 처리, 컨텍스트 누적 위험)
+python3 scripts/gemini_batch.py ./photos --reset-every 0
+
+# 세션 없이 이전 방식으로 동작
+python3 scripts/gemini_batch.py ./photos --no-session
+```
+
+### 워밍업 실패 시 동작
+
+워밍업이 실패하면 해당 이미지부터 자동으로 `--no-session` 방식(전체 프롬프트)으로 폴백합니다.
+다음 이미지에서 워밍업을 재시도하지 않으므로, 오류 메시지를 확인하고 CLI 로그인 상태를 점검하세요.
+
+---
+
+## 7. 모델 선택 기준
 
 | 별칭 | 실제 모델 | 속도 | 품질 | 권장 용도 |
 |------|----------|------|------|----------|
@@ -204,7 +251,7 @@ photos/photo003.err    ← 에러 메시지
 
 ---
 
-## 7. 쿼터 및 속도 설정
+## 8. 쿼터 및 속도 설정
 
 ### Google AI Pro 구독 쿼터
 
@@ -227,7 +274,7 @@ Gemini CLI는 **Gemini Code Assist** 쿼터 기준을 적용한다.
 
 ---
 
-## 8. 실 사용 예제
+## 9. 실 사용 예제
 
 ### 1,000장 폴더 배치 처리 (재개 포함)
 
@@ -257,9 +304,19 @@ python3 scripts/gemini_batch.py ./photos --collect-file ""
 python3 scripts/gemini_batch.py ./photos -o ./prompts_zh --lang zh --model flash
 ```
 
+### 세션 모드 조정
+
+```bash
+# 10장마다 리셋 (짧은 컨텍스트 유지)
+python3 scripts/gemini_batch.py ./photos --reset-every 10
+
+# 세션 없이 이전 방식 (전체 프롬프트 매 이미지)
+python3 scripts/gemini_batch.py ./photos --no-session
+```
+
 ---
 
-## 9. 트러블슈팅
+## 10. 트러블슈팅
 
 ### `gemini CLI not found` 오류
 

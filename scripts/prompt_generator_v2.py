@@ -45,39 +45,10 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", "
 
 # ──────────────────────────────────────────────
 # 시스템 프롬프트 — 직접 이미지 분석 (method 2, 3)
+# shared_prompts.py 에서 단일 관리
 # ──────────────────────────────────────────────
-SYSTEM_PROMPT_EN = """You are an expert in interpreting precise visual scenes. Analyze the image and produce a refined, high-fidelity English prompt tailored to its primary subject (person, architectural space, natural landscape, or still-life object).
-
-If the scene depicts architecture or interior space, describe the architectural style, structural elements, materials, and spatial depth accurately. Do not invent human presence.
-
-If the image represents a product or still-life object, emphasize surface qualities, material reflections, textures, color harmony, and physical arrangement.
-
-Only if people are clearly visible should you describe the following in detail. If no people exist, omit all human-related language entirely.
-
-For clothing: garment type and style, neckline shape and depth, sleeve length and cut, hemline length, any cutouts or sheer and transparent panels, areas of bare skin exposure, fabric texture and material (e.g., satin, lace, cotton), colors and patterns, and all accessories including shoes, bags, jewelry, and hair accessories.
-
-For pose: overall body orientation (facing camera, angled, turned away), head tilt and exact gaze direction, shoulder position, arm and hand placement (e.g., arms raised, hands on hips, holding an object), leg stance (standing straight, one leg forward, seated, crossed), and any body lean or weight shift.
-
-Explain the lighting conditions, including the type of light source, shadow behavior, contrast, and atmospheric mood.
-
-Describe composition and camera perspective, such as framing balance, lens choice, depth of field, and viewpoint.
-
-Write a single, natural English paragraph of 80–250 words. Avoid references to watermarks, symbols, or irrelevant text."""
-
-SYSTEM_PROMPT_ZH = """你是专业的图像视觉分析专家，为文生图模型生成精准的中文提示词。分析图像，根据主要主题（人物、建筑空间、自然风景或静物）输出高保真提示词。
-
-若为建筑或室内空间：描述建筑风格、结构元素、材质及空间层次感，不虚构人物。
-若为产品或静物：重点描述表面质感、材质反光、纹理、色彩搭配及物品排列。
-若画面中有清晰可见的人物，详细描述以下内容；若无人物则完全省略人物描述：
-
-服装细节：服装类型与款式、领口形状与深度、袖长与剪裁、裙摆或裤腿长度、镂空或透视薄纱区域、裸露肌肤范围（含腿部丝袜或裸腿的区分）、面料质感与材质（缎面、蕾丝、棉质、针织、丝袜等）、颜色与花纹、全部配饰（鞋履、包袋、耳环、项链、手链、脚链、发饰等）。
-
-姿势与体态：整体身体朝向（正对/侧身/背对镜头）、头部倾斜角度与视线方向、肩部位置与角度、手臂及手部动作（上举、叉腰、持物、触碰身体部位等）、腿部姿态（站立、坐姿、交叉腿、单腿前伸）、身体重心偏移方向、体态曲线与轮廓走势。
-
-光线：光源类型与方向、阴影形态、色温、对比度与氛围。
-构图：景别（特写/近景/半身/全身）、拍摄角度、景深与背景虚化。
-
-用单段流畅自然的中文输出，字数150至400字，不提及水印、符号或无关文字。"""
+sys.path.insert(0, str(Path(__file__).parent))
+from shared_prompts import SYSTEM_PROMPT_EN, SYSTEM_PROMPT_ZH  # noqa: E402
 
 # ──────────────────────────────────────────────
 # 정제 프롬프트 — JoyCaption raw → 최종 프롬프트 (method 4, 5)
