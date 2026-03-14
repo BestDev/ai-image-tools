@@ -782,7 +782,7 @@ def run_method8(images: list, args):
             elapsed = time.time() - t
             timings.append(elapsed)
             print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"    {result[:120]}{\'...\' if len(result) > 120 else \'\'}")
+            print(f"    {result[:120]}{'...' if len(result) > 120 else ''}")
             _append_prompt(out_file, result, i)
         except Exception as e:
             print(f"    오류: {e}")
@@ -837,7 +837,7 @@ def run_method9(images: list, args):
             elapsed = time.time() - t
             timings.append(elapsed)
             print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"    {result[:120]}{\'...\' if len(result) > 120 else \'\'}")
+            print(f"    {result[:120]}{'...' if len(result) > 120 else ''}")
             _append_prompt(out_file, result, i)
         except Exception as e:
             print(f"    오류: {e}")
