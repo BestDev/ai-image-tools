@@ -142,15 +142,17 @@ def build_cmd(tool: str, params: dict):
         model    = params.get("model", "qwen3vl")
         two_pass = bool(params.get("two_pass", False))
         METHOD_MAP = {
-            ("joycaption", False): 1,
-            ("qwen3vl",    False): 2,
-            ("qwen35",     False): 3,
-            ("qwen3vl",    True):  4,
-            ("qwen35",     True):  5,
-            ("huihui_vl",  False): 6,
-            ("huihui_35",  False): 7,
-            ("huihui_vl",  True):  8,
-            ("huihui_35",  True):  9,
+            ("joycaption",    False): 1,
+            ("qwen3vl",       False): 2,
+            ("qwen35",        False): 3,
+            ("qwen3vl",       True):  4,
+            ("qwen35",        True):  5,
+            ("huihui_vl",     False): 6,
+            ("huihui_35",     False): 7,
+            ("huihui_vl",     True):  8,
+            ("huihui_35",     True):  9,
+            ("gemini3flash",  False): 10,
+            ("gemini31lite",  False): 11,
         }
         method = METHOD_MAP.get((model, two_pass), 2)
 
@@ -183,6 +185,9 @@ def build_cmd(tool: str, params: dict):
             cmd.append("--accumulate")
         if bool(params.get("uncensored", False)):
             cmd.append("--uncensored")
+        gemini_key = params.get("gemini_key", "").strip()
+        if gemini_key:
+            cmd += ["--gemini-key", gemini_key]
 
         imgs = (len([p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT])
                 if path.is_dir() else 1)

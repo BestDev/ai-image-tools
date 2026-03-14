@@ -33,11 +33,13 @@ import gc
 # ──────────────────────────────────────────────
 # 모델 ID
 # ──────────────────────────────────────────────
-MODEL_JOYCAPTION = "fancyfeast/llama-joycaption-beta-one-hf-llava"
-MODEL_QWEN3VL    = "Qwen/Qwen3-VL-8B-Instruct"
-MODEL_QWEN35     = "Qwen/Qwen3.5-9B"
-MODEL_QWEN3VL_AB = "huihui-ai/Huihui-Qwen3-VL-8B-Instruct-abliterated"
-MODEL_QWEN35_AB  = "huihui-ai/Huihui-Qwen3.5-9B-abliterated"
+MODEL_JOYCAPTION   = "fancyfeast/llama-joycaption-beta-one-hf-llava"
+MODEL_QWEN3VL      = "Qwen/Qwen3-VL-8B-Instruct"
+MODEL_QWEN35       = "Qwen/Qwen3.5-9B"
+MODEL_QWEN3VL_AB   = "huihui-ai/Huihui-Qwen3-VL-8B-Instruct-abliterated"
+MODEL_QWEN35_AB    = "huihui-ai/Huihui-Qwen3.5-9B-abliterated"
+MODEL_GEMINI_FLASH = "gemini-3-flash-preview"
+MODEL_GEMINI_LITE  = "gemini-3.1-flash-lite-preview"
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".heic", ".heif"}
 
@@ -886,6 +888,122 @@ def run_method9(images: list, args):
     _print_stats(timings, total, label="Pass 2")
 
 
+# ──────────────────────────────────────────────
+# Gemini API 이미지 분석
+# ──────────────────────────────────────────────
+def run_gemini_image(image_path: str, client, model_id: str, lang: str = "en") -> str:
+    """Gemini API로 이미지 분석 후 프롬프트 반환"""
+    import io
+    from google.genai import types
+    from PIL import Image
+
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except ImportError:
+        pass
+
+    ext = Path(image_path).suffix.lower()
+    if ext in {'.heic', '.heif'}:
+        pil_image = Image.open(image_path).convert("RGB")
+        buf = io.BytesIO()
+        pil_image.save(buf, format='JPEG', quality=95)
+        image_bytes = buf.getvalue()
+        mime_type = 'image/jpeg'
+    else:
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+        mime_map = {
+            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+            '.webp': 'image/webp', '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff', '.tif': 'image/tiff',
+        }
+        mime_type = mime_map.get(ext, 'image/jpeg')
+
+    prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
+    response = client.models.generate_content(
+        model=model_id,
+        contents=[
+            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            prompt,
+        ],
+    )
+    return response.text.strip()
+
+
+def _gemini_client(args):
+    from google import genai
+    api_key = args.gemini_key or os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        print("오류: Gemini API 키가 필요합니다. --gemini-key 또는 GEMINI_API_KEY 환경변수를 설정하세요.")
+        sys.exit(1)
+    return genai.Client(api_key=api_key)
+
+
+def run_method10(images: list, args):
+    """Gemini 3 Flash 직접 이미지 분석"""
+    out_dir = Path(args.output_dir)
+    out_file = out_dir / "prompts.txt"
+
+    if not args.accumulate:
+        _clear_file(out_file)
+    done = _count_prompts(out_file) if args.accumulate else 0
+    if done:
+        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
+    images = images[done:]
+
+    client = _gemini_client(args)
+    print(f"[Gemini] 모델: {MODEL_GEMINI_FLASH}\n")
+
+    timings = []
+    for i, img_path in enumerate(images, done):
+        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
+        t = time.time()
+        try:
+            result = run_gemini_image(img_path, client, MODEL_GEMINI_FLASH, lang=args.lang)
+            elapsed = time.time() - t
+            timings.append(elapsed)
+            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
+            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
+            _append_prompt(out_file, result, i)
+        except Exception as e:
+            print(f"  오류: {e}")
+
+    _print_stats(timings, len(images) + done)
+
+
+def run_method11(images: list, args):
+    """Gemini 3.1 Flash-Lite 직접 이미지 분석"""
+    out_dir = Path(args.output_dir)
+    out_file = out_dir / "prompts.txt"
+
+    if not args.accumulate:
+        _clear_file(out_file)
+    done = _count_prompts(out_file) if args.accumulate else 0
+    if done:
+        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
+    images = images[done:]
+
+    client = _gemini_client(args)
+    print(f"[Gemini] 모델: {MODEL_GEMINI_LITE}\n")
+
+    timings = []
+    for i, img_path in enumerate(images, done):
+        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
+        t = time.time()
+        try:
+            result = run_gemini_image(img_path, client, MODEL_GEMINI_LITE, lang=args.lang)
+            elapsed = time.time() - t
+            timings.append(elapsed)
+            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
+            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
+            _append_prompt(out_file, result, i)
+        except Exception as e:
+            print(f"  오류: {e}")
+
+    _print_stats(timings, len(images) + done)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Z-Image Turbo 프롬프트 생성 v2",
@@ -894,7 +1012,7 @@ def main():
     parser.add_argument("input", help="이미지 파일 또는 폴더 경로")
     parser.add_argument("--output-dir", "-o", required=True, help="출력 폴더 경로")
     parser.add_argument(
-        "--method", "-m", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "--method", "-m", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
         help=(
             "1: JoyCaption (영어 전용)\n"
             "2: Qwen3-VL-8B 직접 분석\n"
@@ -904,7 +1022,9 @@ def main():
             "6: Huihui-Qwen3-VL-8B abliterated 직접 분석\n"
             "7: Huihui-Qwen3.5-9B abliterated 직접 분석\n"
             "8: JoyCaption → Huihui-Qwen3-VL abliterated 정제\n"
-            "9: JoyCaption → Huihui-Qwen3.5 abliterated 정제"
+            "9: JoyCaption → Huihui-Qwen3.5 abliterated 정제\n"
+            "10: Gemini 3 Flash (API)\n"
+            "11: Gemini 3.1 Flash-Lite (API)"
         ),
     )
     parser.add_argument(
@@ -922,6 +1042,10 @@ def main():
     parser.add_argument(
         "--uncensored", action="store_true",
         help="모든 시각 콘텐츠를 검열 없이 묘사 (AI 훈련 데이터용)",
+    )
+    parser.add_argument(
+        "--gemini-key", default="",
+        help="Gemini API 키 (method 10/11 전용, 환경변수 GEMINI_API_KEY 로도 설정 가능)",
     )
     args = parser.parse_args()
 
@@ -961,6 +1085,8 @@ def main():
         7: "Huihui-Qwen3.5-9B abliterated 직접 분석",
         8: "JoyCaption → Huihui-Qwen3-VL abliterated 정제",
         9: "JoyCaption → Huihui-Qwen3.5 abliterated 정제",
+        10: "Gemini 3 Flash (API)",
+        11: "Gemini 3.1 Flash-Lite (API)",
     }
 
     print(f"\n=== Z-Image Turbo 프롬프트 생성 v2 ===")
@@ -986,6 +1112,8 @@ def main():
         7: run_method7,
         8: run_method8,
         9: run_method9,
+        10: run_method10,
+        11: run_method11,
     }
     dispatch[args.method](images, args)
 
