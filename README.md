@@ -61,7 +61,7 @@ python3 web_ui.py
 
 ```bash
 # 프롬프트 생성 (방식 2 - Qwen3-VL, 영어)
-python3 scripts/prompt_generator_v2.py image/dataset --output-dir logs/out --method 2 --lang en
+python3 scripts/prompt_generator_v2.py image/dataset --output-dir output/out --method 2 --lang en
 
 # HEIC → JPEG 변환
 python3 scripts/heic_to_jpeg.py image/iphone_photos --quality 95
@@ -70,7 +70,7 @@ python3 scripts/heic_to_jpeg.py image/iphone_photos --quality 95
 python3 scripts/image_classifier.py image/dataset --by style --copy
 
 # 의상 항목 추출
-python3 scripts/extract_clothing.py --input logs/out/prompts.txt
+python3 scripts/extract_clothing.py --input output/out/prompts.txt
 ```
 
 ---
@@ -101,7 +101,7 @@ image-classifier/
 │   └── web_ui.html
 ├── image/                 # 이미지 데이터 (git 제외)
 │   └── dataset/           # 기본 입력 폴더
-└── logs/                  # 생성 결과 (git 제외)
+└── output/                  # 생성 결과 (git 제외)
     └── YYYY-MM-DD-HHMMSS-m{N}/
         └── prompts.txt
 ```

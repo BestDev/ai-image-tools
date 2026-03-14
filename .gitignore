@@ -31,5 +31,6 @@ image/**/
 __complete/
 __complete/**/
 
-# 테스트 로그 결과
+# 결과 출력 폴더
+output/
 logs/

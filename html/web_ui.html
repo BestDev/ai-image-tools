@@ -373,6 +373,34 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
   padding: 20px 24px; width: min(540px, 92vw); max-height: 85vh; overflow-y: auto;
 }
 
+/* ── 폴더 브라우저 ── */
+.fb-path {
+  font-size: 11.5px; color: var(--cyan); padding: 7px 10px;
+  background: var(--card2); border-radius: 6px; margin-bottom: 10px;
+  word-break: break-all; font-family: monospace; min-height: 32px;
+}
+.fb-list {
+  max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px;
+}
+.fb-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer;
+  border-bottom: 1px solid var(--border); transition: background .1s;
+  font-size: 13px; color: var(--text);
+}
+.fb-item:last-child { border-bottom: none; }
+.fb-item:hover { background: var(--card2); }
+.fb-item-icon { font-size: 14px; }
+.browse-btn {
+  padding: 0 8px; background: var(--card2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--dim); cursor: pointer; font-size: 14px;
+  white-space: nowrap; transition: all .15s; line-height: 1;
+  display: flex; align-items: center;
+}
+.browse-btn:hover { border-color: var(--accent); color: var(--text); }
+
 /* ── 큐 아이템 ── */
 .queue-item {
   padding: 9px 12px; margin-bottom: 6px;
@@ -421,6 +449,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           </div>
           <div class="folder-row">
             <input type="text" id="p-input" value="image/dataset" oninput="clearCount('p-count')">
+            <button class="browse-btn" onclick="openFolderBrowser('p-input')" title="폴더 탐색">📁</button>
             <button class="scan-btn" onclick="scanFolder('p-input','p-count','image')">스캔</button>
           </div>
           <div id="p-count" class="count-badge"></div>
@@ -429,9 +458,12 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div class="form-row">
           <div class="form-label">
             출력 폴더
-            <span class="tip" data-tip="비워두면 logs/YYYY-MM-DD-HHMMSS-m{N} 으로 자동 생성&#10;이전 작업 이어서 실행 시 해당 폴더 경로 입력">?</span>
+            <span class="tip" data-tip="비워두면 output/YYYY-MM-DD-HHMMSS-m{N} 으로 자동 생성&#10;이전 작업 이어서 실행 시 해당 폴더 경로 입력">?</span>
           </div>
-          <input type="text" id="p-output" placeholder="자동 생성 (logs/날짜-방식번호)">
+          <div class="folder-row">
+            <input type="text" id="p-output" placeholder="자동 생성 (output/날짜-방식번호)">
+            <button class="browse-btn" onclick="openFolderBrowser('p-output')" title="폴더 탐색">📁</button>
+          </div>
         </div>
 
         <div class="section-title">모델 선택
@@ -469,7 +501,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
             </div>
             <div id="raw-path-row" class="hidden">
               <div class="folder-row">
-                <input type="text" id="p-rawpath" placeholder="logs/날짜-m1/prompts_raw.txt">
+                <input type="text" id="p-rawpath" placeholder="output/날짜-m1/prompts_raw.txt">
                 <button class="scan-btn" onclick="checkRawPath()">확인</button>
               </div>
               <div id="p-rawpath-status" class="count-badge"></div>
@@ -519,6 +551,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           </div>
           <div class="folder-row">
             <input type="text" id="h-input" value="image/dataset" oninput="clearCount('h-count')">
+            <button class="browse-btn" onclick="openFolderBrowser('h-input')" title="폴더 탐색">📁</button>
             <button class="scan-btn" onclick="scanFolder('h-input','h-count','heic')">스캔</button>
           </div>
           <div id="h-count" class="count-badge"></div>
@@ -562,6 +595,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           </div>
           <div class="folder-row">
             <input type="text" id="c-input" value="image/dataset" oninput="clearCount('c-count')">
+            <button class="browse-btn" onclick="openFolderBrowser('c-input')" title="폴더 탐색">📁</button>
             <button class="scan-btn" onclick="scanFolder('c-input','c-count','image')">스캔</button>
           </div>
           <div id="c-count" class="count-badge"></div>
@@ -571,7 +605,10 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
             출력 폴더
             <span class="tip" data-tip="분류 결과를 저장할 폴더&#10;비워두면 입력폴더/by_{기준} 으로 자동 생성">?</span>
           </div>
-          <input type="text" id="c-output" placeholder="자동 생성 (입력폴더/by_{기준})">
+          <div class="folder-row">
+            <input type="text" id="c-output" placeholder="자동 생성 (입력폴더/by_{기준})">
+            <button class="browse-btn" onclick="openFolderBrowser('c-output')" title="폴더 탐색">📁</button>
+          </div>
         </div>
 
         <div class="section-title">분류 기준</div>
@@ -635,10 +672,11 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div class="form-row">
           <div class="form-label">
             입력 경로
-            <span class="tip tip-down" data-tip="프롬프트가 담긴 .txt 파일 또는 폴더 경로&#10;prompt_generator_v2 출력 폴더(logs/…) 지정 가능">?</span>
+            <span class="tip tip-down" data-tip="프롬프트가 담긴 .txt 파일 또는 폴더 경로&#10;prompt_generator_v2 출력 폴더(output/…) 지정 가능">?</span>
           </div>
           <div class="folder-row">
             <input type="text" id="cl-input" value="prompts" oninput="clearCount('cl-count')">
+            <button class="browse-btn" onclick="openFolderBrowser('cl-input')" title="폴더 탐색">📁</button>
             <button class="scan-btn" onclick="scanFolder('cl-input','cl-count','txt')">스캔</button>
           </div>
           <div id="cl-count" class="count-badge"></div>
@@ -648,7 +686,10 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
             출력 폴더
             <span class="tip" data-tip="추출 결과를 저장할 폴더 경로&#10;기본값: output/">?</span>
           </div>
-          <input type="text" id="cl-output" value="output">
+          <div class="folder-row">
+            <input type="text" id="cl-output" value="output">
+            <button class="browse-btn" onclick="openFolderBrowser('cl-output')" title="폴더 탐색">📁</button>
+          </div>
         </div>
 
         <div class="section-title">추출 방식</div>
@@ -856,6 +897,22 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
   </div><!-- /panel-right -->
 
 </div><!-- /main -->
+
+<!-- 폴더 브라우저 모달 -->
+<div id="fbModal" class="modal-overlay hidden" onclick="closeFBModal(event)">
+  <div class="modal-box" style="width:min(480px,92vw)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <span style="font-size:15px;font-weight:700;color:var(--text)">폴더 선택</span>
+      <button class="btn-sm" onclick="document.getElementById('fbModal').classList.add('hidden')">✕</button>
+    </div>
+    <div class="fb-path" id="fbPath">(저장소 루트)</div>
+    <div class="fb-list" id="fbList"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-sm" onclick="document.getElementById('fbModal').classList.add('hidden')">취소</button>
+      <button class="btn btn-run" style="padding:7px 18px;font-size:13px;flex:none" onclick="confirmFBSelect()">이 폴더 선택</button>
+    </div>
+  </div>
+</div>
 
 <!-- WSL 가이드 모달 -->
 <div id="wslModal" class="modal-overlay hidden" onclick="closeWSLModal(event)">
@@ -1308,7 +1365,7 @@ async function loadPrompts(runName) {
   viewer.classList.remove('hidden');
 
   try {
-    const r = await fetch(`/api/read?path=logs/${runName}/prompts.txt`);
+    const r = await fetch(`/api/read?path=output/${runName}/prompts.txt`);
     const d = await r.json();
     if (d.error) { plist.innerHTML = `<div style="color:var(--red)">${d.error}</div>`; return; }
     if (!d.lines.length) { plist.innerHTML = '<div style="color:var(--muted)">내용 없음</div>'; return; }
@@ -1438,6 +1495,68 @@ async function showInlineResult(outputDir) {
 }
 function closeInlineViewer() {
   document.getElementById('inlineViewer').classList.add('hidden');
+}
+
+// ─── 폴더 브라우저 ──────────────────────────────────────
+let _fbTarget = null;
+let _fbCurrent = '';
+
+async function openFolderBrowser(targetInputId) {
+  _fbTarget = targetInputId;
+  const cur = document.getElementById(targetInputId)?.value.trim() || '';
+  document.getElementById('fbModal').classList.remove('hidden');
+  await navigateFB(cur || '');
+}
+
+async function navigateFB(path) {
+  _fbCurrent = path;
+  const list   = document.getElementById('fbList');
+  const pathEl = document.getElementById('fbPath');
+  list.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:12px">로딩 중…</div>';
+  pathEl.textContent = path || '(저장소 루트)';
+  try {
+    const r = await fetch(`/api/ls?path=${encodeURIComponent(path)}`);
+    const d = await r.json();
+    if (d.error) {
+      list.innerHTML = `<div style="padding:12px;color:var(--red);font-size:12px">${d.error}</div>`;
+      return;
+    }
+    _fbCurrent = d.path;
+    pathEl.textContent = d.path || '(저장소 루트)';
+    let html = '';
+    if (d.parent !== null && d.parent !== undefined) {
+      html += `<div class="fb-item" onclick='navigateFB(${JSON.stringify(d.parent)})'>
+        <span class="fb-item-icon">⬆</span><span style="color:var(--dim)">상위 폴더</span>
+      </div>`;
+    }
+    if (!d.dirs.length) {
+      html += '<div style="padding:12px;color:var(--muted);font-size:12px;text-align:center">하위 폴더 없음</div>';
+    } else {
+      html += d.dirs.map(dir =>
+        `<div class="fb-item" onclick='navigateFB(${JSON.stringify(dir.path)})'>
+          <span class="fb-item-icon">📁</span>${dir.name}
+        </div>`
+      ).join('');
+    }
+    list.innerHTML = html;
+  } catch {
+    list.innerHTML = '<div style="padding:12px;color:var(--red);font-size:12px">로딩 실패</div>';
+  }
+}
+
+function confirmFBSelect() {
+  if (_fbTarget) {
+    const el = document.getElementById(_fbTarget);
+    if (el) {
+      el.value = _fbCurrent || '.';
+      el.dispatchEvent(new Event('input'));
+    }
+  }
+  document.getElementById('fbModal').classList.add('hidden');
+}
+
+function closeFBModal(e) {
+  if (e.target.id === 'fbModal') document.getElementById('fbModal').classList.add('hidden');
 }
 
 // ─── WSL 접속 가이드 ────────────────────────────────────

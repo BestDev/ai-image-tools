@@ -148,7 +148,7 @@ def build_cmd(tool: str, params: dict):
         method = METHOD_MAP.get((model, two_pass), 2)
 
         ts = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-        output_dir = params.get("output_dir") or f"logs/{ts}-m{method}"
+        output_dir = params.get("output_dir") or f"output/{ts}-m{method}"
 
         accumulate = bool(params.get("accumulate", False))
 
@@ -177,7 +177,8 @@ def build_cmd(tool: str, params: dict):
 
         imgs = (len([p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT])
                 if path.is_dir() else 1)
-        return cmd, imgs, output_dir
+        total_steps = imgs * 2 if method in (4, 5, 8, 9) else imgs
+        return cmd, total_steps, output_dir
 
     elif tool == "heic":
         folder = params.get("input_dir", "image/dataset")
@@ -234,8 +235,9 @@ def build_cmd(tool: str, params: dict):
 # 프로세스 실행 (백그라운드 스레드)
 # ---------------------------------------------------------------------------
 
-RE_IMG_START  = re.compile(r"^\[(\d+)/(\d+)\]\s+(.+)$")
-RE_IMG_DONE   = re.compile(r"완료\s+\(([0-9.]+)초\)\s+\|\s+(\d+)단어")
+RE_IMG_START      = re.compile(r"^\[(\d+)/(\d+)\]\s+(.+)$")
+RE_IMG_DONE       = re.compile(r"완료\s+\(([0-9.]+)초\)\s+\|\s+(\d+)단어")
+RE_IMG_DONE_NOWD  = re.compile(r"^\s+완료\s+\(([0-9.]+)초\)\s*$")   # Pass 1: 단어 수 없음
 RE_HEIC_DONE  = re.compile(r"[✓→]\s|변환\s+완료|저장")
 RE_CLASS_DONE = re.compile(r"→\s+\w+|분류\s+완료")
 RE_HF_DOWN    = re.compile(r'(\d+)%\|')
@@ -263,6 +265,7 @@ def run_process(run_id: str, cmd: list, total: int):
         threading.Thread(target=_poll, daemon=True).start()
 
         generic_done = 0  # 상세 파싱 불가 도구용 카운터
+        pass_offset  = 0  # 2-pass 방식: Pass 2 시작 시 Pass 1 완료 수 보정
 
         for line in proc.stdout:
             line = line.rstrip()
@@ -271,20 +274,39 @@ def run_process(run_id: str, cmd: list, total: int):
             # 프롬프트 생성: [N/M] filename
             m = RE_IMG_START.match(line.strip())
             if m:
-                cur, tot, fname = int(m.group(1)), int(m.group(2)), m.group(3)
+                cur, _tot, fname = int(m.group(1)), int(m.group(2)), m.group(3)
+                # 새 패스 감지: cur가 1로 리셋되고 이미 완료된 이미지가 있으면 패스 오프셋 갱신
+                if cur == 1 and timings:
+                    pass_offset = len(timings)
                 state["current_file"] = fname
+                effective = pass_offset + cur - 1
                 avg = sum(timings) / len(timings) if timings else None
                 emit("progress", {
-                    "current": cur - 1, "total": tot, "filename": fname,
+                    "current": effective, "total": total, "filename": fname,
                     "avg_sec": avg,
-                    "eta_sec": (tot - cur + 1) * avg if avg else None,
+                    "eta_sec": (total - effective) * avg if avg else None,
                 })
                 continue
 
-            # 프롬프트 생성: 완료 줄
+            # 프롬프트 생성: 완료 줄 (단어 수 있음 — Pass 2 / 단일 패스)
             m2 = RE_IMG_DONE.search(line)
             if m2:
                 elapsed = float(m2.group(1))
+                timings.append(elapsed)
+                done = len(timings)
+                avg  = sum(timings) / done
+                emit("progress", {
+                    "current": done, "total": total,
+                    "filename": state.get("current_file", ""),
+                    "elapsed_last": elapsed, "avg_sec": avg,
+                    "eta_sec": max(0, (total - done) * avg),
+                })
+                continue
+
+            # 프롬프트 생성: 완료 줄 (단어 수 없음 — Pass 1 JoyCaption)
+            m2b = RE_IMG_DONE_NOWD.match(line)
+            if m2b:
+                elapsed = float(m2b.group(1))
                 timings.append(elapsed)
                 done = len(timings)
                 avg  = sum(timings) / done
@@ -420,7 +442,7 @@ def stop_run(run_id):
 
 @app.route("/api/history")
 def get_history():
-    logs_dir = BASE_DIR / "logs"
+    logs_dir = BASE_DIR / "output"
     if not logs_dir.exists():
         return jsonify({"runs": []})
     result = []
@@ -434,6 +456,49 @@ def get_history():
                 count = sum(1 for ln in f if ln.strip())
         result.append({"name": d.name, "has_prompts": pt.exists(), "count": count})
     return jsonify({"runs": result[:50]})
+
+
+@app.route("/api/ls")
+def list_dir():
+    """폴더 브라우저용 디렉토리 목록"""
+    path_str = request.args.get("path", "")
+    if not path_str:
+        path = BASE_DIR
+    else:
+        p = Path(path_str)
+        path = p.resolve() if p.is_absolute() else (BASE_DIR / path_str).resolve()
+
+    if not path.exists() or not path.is_dir():
+        return jsonify({"error": "not found", "dirs": []}), 404
+
+    try:
+        rel = str(path.relative_to(BASE_DIR))
+        if rel == ".":
+            rel = ""
+    except ValueError:
+        rel = str(path)
+
+    parent = None
+    if path != BASE_DIR:
+        try:
+            parent_rel = str(path.parent.relative_to(BASE_DIR))
+            parent = "" if parent_rel == "." else parent_rel
+        except ValueError:
+            pass
+
+    dirs = []
+    try:
+        for d in sorted(path.iterdir(), key=lambda x: x.name.lower()):
+            if d.is_dir() and not d.name.startswith("."):
+                try:
+                    dir_rel = str(d.relative_to(BASE_DIR))
+                except ValueError:
+                    dir_rel = str(d)
+                dirs.append({"name": d.name, "path": dir_rel})
+    except PermissionError:
+        pass
+
+    return jsonify({"path": rel, "parent": parent, "dirs": dirs})
 
 
 @app.route("/api/read")
