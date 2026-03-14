@@ -50,12 +50,19 @@ def _queue_worker():
     """배치 큐 순차 처리 스레드"""
     while True:
         job = None
-        with queue_lock:
-            for j in job_queue:
-                if j["status"] == "pending":
-                    j["status"] = "running"
-                    job = j
-                    break
+        # 직접 실행(/api/run) 포함, 현재 실행 중인 작업이 있으면 대기
+        with runs_lock:
+            any_active = any(not r["finished"] for r in runs.values())
+        if not any_active:
+            with queue_lock:
+                # 큐 내에서도 이미 running인 항목이 없을 때만 새 작업 시작
+                queue_busy = any(j["status"] == "running" for j in job_queue)
+                if not queue_busy:
+                    for j in job_queue:
+                        if j["status"] == "pending":
+                            j["status"] = "running"
+                            job = j
+                            break
         if job is None:
             time.sleep(1)
             continue
