@@ -502,6 +502,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
             <div id="raw-path-row" class="hidden">
               <div class="folder-row">
                 <input type="text" id="p-rawpath" placeholder="output/날짜-m1/prompts_raw.txt">
+                <button class="browse-btn" onclick="openFolderBrowser('p-rawpath', 'prompts_raw.txt')" title="폴더 탐색">📁</button>
                 <button class="scan-btn" onclick="checkRawPath()">확인</button>
               </div>
               <div id="p-rawpath-status" class="count-badge"></div>
@@ -1500,10 +1501,14 @@ function closeInlineViewer() {
 // ─── 폴더 브라우저 ──────────────────────────────────────
 let _fbTarget = null;
 let _fbCurrent = '';
+let _fbSuffix  = '';  // 폴더 선택 후 자동으로 붙일 파일명 (예: 'prompts_raw.txt')
 
-async function openFolderBrowser(targetInputId) {
+async function openFolderBrowser(targetInputId, suffix = '') {
   _fbTarget = targetInputId;
-  const cur = document.getElementById(targetInputId)?.value.trim() || '';
+  _fbSuffix = suffix;
+  let cur = document.getElementById(targetInputId)?.value.trim() || '';
+  // 파일명 suffix가 있고 현재 값이 해당 파일로 끝나면 폴더 부분만 추출
+  if (suffix && cur.endsWith('/' + suffix)) cur = cur.slice(0, -(suffix.length + 1));
   document.getElementById('fbModal').classList.remove('hidden');
   await navigateFB(cur || '');
 }
@@ -1548,7 +1553,9 @@ function confirmFBSelect() {
   if (_fbTarget) {
     const el = document.getElementById(_fbTarget);
     if (el) {
-      el.value = _fbCurrent || '.';
+      let val = _fbCurrent || '.';
+      if (_fbSuffix) val = val.replace(/\/$/, '') + '/' + _fbSuffix;
+      el.value = val;
       el.dispatchEvent(new Event('input'));
     }
   }
