@@ -97,6 +97,7 @@ image-classifier/
 ├── scripts/               # CLI 스크립트
 │   ├── prompt_generator_v2.py   # 프롬프트 생성 (11가지 방식)
 │   ├── gemini_batch.py          # Gemini CLI 헤드리스 배치
+│   ├── shared_prompts.py        # 공유 프롬프트 정의 (두 스크립트가 공통 사용)
 │   ├── to_wildcard.py           # ComfyUI 와일드카드 변환
 │   ├── image_classifier.py      # 이미지 분류
 │   ├── heic_to_jpeg.py          # HEIC 변환

@@ -27,6 +27,9 @@
 이미지를 분석하여 **Z-Image Turbo에 최적화된 서술형 프롬프트**를 자동 생성한다.
 v2는 11가지 방식을 단일 스크립트로 통합하였으며, 누적 재개(`--accumulate`) 기능을 지원한다.
 
+분석 지시문(시스템 프롬프트)은 `scripts/shared_prompts.py`에서 단일 관리되며,
+`gemini_batch.py`(Gemini CLI 배치)도 동일한 지시문을 사용한다.
+
 ### 지원 방식
 
 | 방식 | 모델(들) | 언어 | VRAM | 특징 |
@@ -439,11 +442,12 @@ pip install pillow-heif
 | 항목 | v1 | v2 |
 |------|----|----|
 | 스크립트 | 방식별 별도 스크립트 | 단일 스크립트로 통합 |
-| 방식 수 | 5가지 | 9가지 (통합 + abliterated 4가지 추가) |
+| 방식 수 | 5가지 | 11가지 (로컬 9 + 클라우드 API 2) |
 | 누적 재개 | 지원 | 지원 (`--accumulate`) |
 | 파일 초기화 | 재실행 시 append 문제 | 비누적 모드에서 자동 초기화 |
 | 이미지 정렬 | 전체 경로 기준 sort | 파일명 기준 sort (`p.name`) |
 | 2-pass 캐시 | 미지원 | prompts_raw.txt 재활용 가능 |
+| 시스템 프롬프트 관리 | 인라인 정의 | shared_prompts.py 분리 (gemini_batch 공유) |
 
 ---
 
