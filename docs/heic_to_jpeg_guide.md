@@ -2,7 +2,7 @@
 
 > 최종 업데이트: 2026-03-05
 > 환경: WSL2 / Ubuntu-24.04 / Python 3.12
-> 가상환경: `/home/bestdev/ai_training/venv-classifier`
+> 가상환경: `<저장소 루트>/venv-classifier`
 > 검증 상태: `Ubuntu-24.04` 에서 실행 확인
 
 ---
@@ -204,7 +204,7 @@ python3 image_classifier.py /mnt/d/iphone_photos/by_style/photorealistic --by pe
 python3 heic_to_jpeg.py /mnt/d/iphone_photos
 
 # 2단계: 프롬프트 생성 (누적 저장)
-python3 prompt_generator.py /mnt/d/iphone_photos \
+python3 scripts/prompt_generator_v2.py /mnt/d/iphone_photos \
   --method 2 \
   --output-dir /mnt/d/prompts \
   --accumulate
@@ -230,7 +230,7 @@ python3 prompt_generator.py /mnt/d/iphone_photos \
 ### pillow-heif 오류 발생 시
 
 ```bash
-/home/bestdev/ai_training/venv-classifier/bin/pip install pillow-heif
+<저장소 루트>/venv-classifier/bin/pip install pillow-heif
 ```
 
 ### 변환 중 특정 파일에서 오류 발생 시

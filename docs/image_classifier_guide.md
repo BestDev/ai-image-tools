@@ -2,7 +2,7 @@
 
 > 최종 업데이트: 2026-03-05 (HEIC 지원 추가)
 > 환경: WSL2 / Ubuntu-24.04 / RTX 4090 24GB / Python 3.12
-> 가상환경: `/home/bestdev/ai_training/venv-classifier`
+> 가상환경: `<저장소 루트>/venv-classifier`
 > 검증 상태: `Ubuntu-24.04` 에서 GPU 실행 확인
 
 ---
@@ -465,7 +465,7 @@ CUDA_VISIBLE_DEVICES="" python3 image_classifier.py /mnt/d/raw --by style
 만약 오류가 발생하면 직접 설치한다:
 
 ```bash
-/home/bestdev/ai_training/venv-classifier/bin/pip install pillow-heif
+<저장소 루트>/venv-classifier/bin/pip install pillow-heif
 ```
 
 ### 이미지를 찾지 못할 때

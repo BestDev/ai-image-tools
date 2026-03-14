@@ -9,7 +9,7 @@ AI 이미지 학습 데이터셋 준비를 위한 통합 도구 모음.
 
 | 도구 | 설명 | 문서 |
 |------|------|------|
-| **prompt_generator_v2** | 이미지→프롬프트 자동 생성 (7가지 방식) | [docs/prompt_generator_v2_guide.md](docs/prompt_generator_v2_guide.md) |
+| **prompt_generator_v2** | 이미지→프롬프트 자동 생성 (9가지 방식) | [docs/prompt_generator_v2_guide.md](docs/prompt_generator_v2_guide.md) |
 | **image_classifier** | 이미지 자동 분류 (화풍 / 배경 / 인물 수) | [docs/image_classifier_guide.md](docs/image_classifier_guide.md) |
 | **heic_to_jpeg** | iPhone HEIC 이미지 일괄 JPEG 변환 | [docs/heic_to_jpeg_guide.md](docs/heic_to_jpeg_guide.md) |
 | **extract_clothing** | 프롬프트에서 의상 항목 자동 추출 | — |
@@ -21,13 +21,24 @@ AI 이미지 학습 데이터셋 준비를 위한 통합 도구 모음.
 
 ### 1. 가상환경 설치
 
+프롬프트 생성용 (`venv-prompt`) — Flask, LLM 추론:
+
 ```bash
 cd /path/to/image-classifier
 python3 -m venv venv-prompt
 source venv-prompt/bin/activate
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-pip install transformers accelerate bitsandbytes pillow pillow-heif flask psutil
+pip install -r requirements-prompt.txt
 ```
+
+이미지 분류용 (`venv-classifier`) — CLIP, YOLO:
+
+```bash
+python3 -m venv venv-classifier
+source venv-classifier/bin/activate
+pip install -r requirements-classifier.txt
+```
+
+> 두 가상환경 모두 저장소 루트에 생성해야 자동 전환이 동작합니다.
 
 ### 2. Web UI 실행 (권장)
 
@@ -37,6 +48,14 @@ python3 web_ui.py
 ```
 
 브라우저에서 모든 도구를 GUI로 조작할 수 있습니다.
+
+**Web UI 주요 기능:**
+- 6개 탭: 프롬프트 생성 / HEIC 변환 / 이미지 분류 / 의상 추출 / 배치 큐 / 실행 이력
+- 실시간 터미널 출력, GPU/VRAM/RAM 모니터링
+- 이미지 썸네일 미리보기 (처리 완료 표시)
+- 모델 다운로드 진행률 표시
+- 배치 큐: 여러 작업을 등록하여 GPU 순차 자동 처리
+- WSL→Windows 접속 가이드 내장 (헤더 ℹ WSL 버튼)
 
 ### 3. 커맨드라인 직접 사용
 
@@ -61,7 +80,10 @@ python3 scripts/extract_clothing.py --input logs/out/prompts.txt
 ```
 image-classifier/
 ├── web_ui.py              # Web UI 서버 (Flask)
+├── requirements-prompt.txt     # venv-prompt 패키지 목록
+├── requirements-classifier.txt # venv-classifier 패키지 목록
 ├── venv-prompt/           # Python 가상환경 (git 제외)
+├── venv-classifier/       # 분류용 가상환경 (git 제외)
 ├── scripts/               # CLI 스크립트
 │   ├── prompt_generator_v2.py   # 프롬프트 생성 메인
 │   ├── image_classifier.py      # 이미지 분류
@@ -90,13 +112,15 @@ image-classifier/
 
 | 방식 | 모델 | 언어 | VRAM | 특징 |
 |------|------|------|------|------|
-| 1 | JoyCaption Alpha Two | EN | ~10GB | 영어 전용, 안정적 |
+| 1 | JoyCaption Beta One | EN | ~10GB | 영어 전용, 안정적 |
 | 2 | Qwen3-VL-8B | EN/ZH | ~16GB | 빠르고 정확 |
 | 3 | Qwen3.5-9B | EN/ZH | ~18GB | 상세한 묘사 |
 | 4 | JoyCaption → Qwen3-VL | EN/ZH | ~16GB | 2-pass 정제 |
 | 5 | JoyCaption → Qwen3.5 | EN/ZH | ~18GB | 2-pass 정제 |
 | 6 | Huihui-Qwen3-VL (검열 해제) | EN/ZH | ~16GB | 성인 이미지 포함 가능 |
 | 7 | Huihui-Qwen3.5 (검열 해제) | EN/ZH | ~18GB | 성인 이미지 포함 가능 |
+| 8 | JoyCaption → Huihui-Qwen3-VL | EN/ZH | ~16GB | 2-pass 정제 (검열 해제) |
+| 9 | JoyCaption → Huihui-Qwen3.5 | EN/ZH | ~18GB | 2-pass 정제 (검열 해제) |
 
 자세한 내용: [docs/prompt_generator_v2_guide.md](docs/prompt_generator_v2_guide.md)
 

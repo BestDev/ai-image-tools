@@ -16,9 +16,11 @@ if _VENV_DIR.exists() and Path(sys.prefix) != _VENV_DIR:
              [str(_VENV_DIR / "bin" / "python3")] + sys.argv)
 
 import argparse
+import io
 import json
 import queue
 import re
+import socket
 import subprocess
 import threading
 import time
@@ -37,6 +39,53 @@ HEIC_EXT  = {".heic", ".heif"}
 
 runs: dict = {}
 runs_lock = threading.Lock()
+_current_port = 7860
+
+# 배치 큐
+job_queue: list = []
+queue_lock = threading.Lock()
+
+
+def _queue_worker():
+    """배치 큐 순차 처리 스레드"""
+    while True:
+        job = None
+        with queue_lock:
+            for j in job_queue:
+                if j["status"] == "pending":
+                    j["status"] = "running"
+                    job = j
+                    break
+        if job is None:
+            time.sleep(1)
+            continue
+        try:
+            cmd, total, output_dir = build_cmd(job["tool"], job["params"])
+            run_id = str(uuid.uuid4())[:8]
+            with runs_lock:
+                runs[run_id] = {
+                    "run_id": run_id, "tool": job["tool"],
+                    "output_dir": output_dir,
+                    "started_at": time.time(), "finished": False,
+                    "process": None, "queue": queue.Queue(),
+                    "total": total, "current_file": "",
+                }
+            with queue_lock:
+                job["run_id"] = run_id
+                job["output_dir"] = output_dir
+            run_process(run_id, cmd, total)   # blocking until done
+            with runs_lock:
+                proc = runs[run_id].get("process")
+                rc = proc.returncode if proc else -1
+            with queue_lock:
+                job["status"] = "done" if rc == 0 else "error"
+        except Exception as e:
+            with queue_lock:
+                job["status"] = "error"
+                job["error"] = str(e)
+
+
+threading.Thread(target=_queue_worker, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +238,7 @@ RE_IMG_START  = re.compile(r"^\[(\d+)/(\d+)\]\s+(.+)$")
 RE_IMG_DONE   = re.compile(r"완료\s+\(([0-9.]+)초\)\s+\|\s+(\d+)단어")
 RE_HEIC_DONE  = re.compile(r"[✓→]\s|변환\s+완료|저장")
 RE_CLASS_DONE = re.compile(r"→\s+\w+|분류\s+완료")
+RE_HF_DOWN    = re.compile(r'(\d+)%\|')
 
 
 def run_process(run_id: str, cmd: list, total: int):
@@ -245,6 +295,12 @@ def run_process(run_id: str, cmd: list, total: int):
                     "eta_sec": max(0, (total - done) * avg),
                 })
                 continue
+
+            # HuggingFace 다운로드 진행률 (log도 함께 emit)
+            m3 = RE_HF_DOWN.search(line)
+            if m3 and any(k in line for k in ('Fetching', 'Downloading', '.safetensors', '.bin', '.json', 'model')):
+                pct = int(m3.group(1))
+                emit("download", {"pct": pct, "label": line.strip()[:100]})
 
             # 기타 도구: 단순 카운팅
             if RE_HEIC_DONE.search(line) or RE_CLASS_DONE.search(line):
@@ -399,6 +455,112 @@ def read_file():
     return jsonify({"lines": lines, "count": len(lines)})
 
 
+@app.route("/api/image")
+def serve_image():
+    """이미지 파일 반환 (썸네일 지원)"""
+    path_str = request.args.get("path", "")
+    thumb = request.args.get("thumb", "0") == "1"
+    if not path_str:
+        return jsonify({"error": "path required"}), 400
+    path = (BASE_DIR / path_str).resolve()
+    try:
+        path.relative_to(BASE_DIR)
+    except ValueError:
+        return jsonify({"error": "접근 불가"}), 403
+    if not path.exists() or path.suffix.lower() not in IMAGE_EXT:
+        return jsonify({"error": "이미지 없음"}), 404
+    if thumb:
+        try:
+            from PIL import Image as PILImage
+            img = PILImage.open(path)
+            img.thumbnail((160, 160))
+            buf = io.BytesIO()
+            fmt = "JPEG" if path.suffix.lower() in {".jpg", ".jpeg", ".heic", ".heif"} else "PNG"
+            if img.mode in ("RGBA", "P") and fmt == "JPEG":
+                img = img.convert("RGB")
+            img.save(buf, format=fmt, quality=80)
+            buf.seek(0)
+            mime = "image/jpeg" if fmt == "JPEG" else "image/png"
+            return Response(buf.read(), mimetype=mime)
+        except Exception:
+            pass
+    return send_file(path)
+
+
+@app.route("/api/images-list")
+def images_list():
+    """폴더 내 이미지 목록 반환"""
+    folder = request.args.get("folder", "")
+    if not folder:
+        return jsonify({"images": [], "folder": folder})
+    path = (BASE_DIR / folder).resolve()
+    if not path.exists() or not path.is_dir():
+        return jsonify({"images": [], "folder": folder})
+    imgs = sorted(p.name for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT)
+    return jsonify({"images": imgs, "folder": folder})
+
+
+@app.route("/api/info")
+def get_info():
+    """WSL IP 및 포트 정보 반환 (eth0 우선)"""
+    ip = "127.0.0.1"
+    try:
+        # WSL2의 실제 eth0 IP 우선 (172.x 또는 192.168.x 대역)
+        r = subprocess.run(["ip", "addr", "show", "eth0"],
+                           capture_output=True, text=True, timeout=2)
+        if r.returncode == 0:
+            import re as _re
+            m = _re.search(r'inet (\d+\.\d+\.\d+\.\d+)', r.stdout)
+            if m:
+                ip = m.group(1)
+        if ip == "127.0.0.1":
+            ip = socket.gethostbyname(socket.gethostname())
+    except Exception:
+        pass
+    return jsonify({"wsl_ip": ip, "port": _current_port})
+
+
+@app.route("/api/queue/add", methods=["POST"])
+def queue_add():
+    data = request.json or {}
+    tool = data.get("tool", "prompt")
+    try:
+        build_cmd(tool, data)   # validate params
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    job_id = str(uuid.uuid4())[:8]
+    with queue_lock:
+        job_queue.append({
+            "id": job_id, "tool": tool, "params": data,
+            "status": "pending", "added_at": time.time(),
+            "run_id": None, "output_dir": None,
+        })
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/queue/list")
+def queue_list_route():
+    with queue_lock:
+        return jsonify({"jobs": list(job_queue)})
+
+
+@app.route("/api/queue/clear", methods=["POST"])
+def queue_clear():
+    with queue_lock:
+        job_queue[:] = [j for j in job_queue if j["status"] == "running"]
+    return jsonify({"ok": True})
+
+
+@app.route("/api/queue/remove/<job_id>", methods=["POST"])
+def queue_remove(job_id):
+    with queue_lock:
+        for j in job_queue:
+            if j["id"] == job_id and j["status"] == "pending":
+                j["status"] = "cancelled"
+                break
+    return jsonify({"ok": True})
+
+
 # ---------------------------------------------------------------------------
 # 엔트리포인트
 # ---------------------------------------------------------------------------
@@ -408,6 +570,7 @@ if __name__ == "__main__":
     p.add_argument("--port", type=int, default=7860)
     p.add_argument("--host", default="0.0.0.0")
     a = p.parse_args()
+    _current_port = a.port
 
     print(f"\n{'='*40}")
     print(f"  Z-Image Tools Web UI")

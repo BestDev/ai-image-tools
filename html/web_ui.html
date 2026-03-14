@@ -337,6 +337,47 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
 .toast.success { border-color: var(--green); color: var(--green); }
 .toast.error   { border-color: var(--red);   color: var(--red); }
 @keyframes fadeIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+
+/* ── 썸네일 패널 ── */
+.thumb-panel {
+  border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
+}
+.thumb-panel-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 12px; border-bottom: 1px solid var(--border);
+}
+.thumb-panel-hdr span { font-size: 11px; font-weight: 700; letter-spacing: .8px; color: var(--muted); text-transform: uppercase; }
+.thumb-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 3px; padding: 6px 8px; overflow-y: auto; max-height: 190px;
+}
+.thumb-item {
+  position: relative; aspect-ratio: 1; border-radius: 3px; overflow: hidden;
+  background: var(--card2); border: 1px solid var(--border);
+}
+.thumb-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-item .thumb-chk {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(34,197,94,.55); font-size: 18px; color: #fff;
+}
+.thumb-item.done { border-color: var(--green); }
+
+/* ── 모달 ── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.65); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px 24px; width: min(540px, 92vw); max-height: 85vh; overflow-y: auto;
+}
+
+/* ── 큐 아이템 ── */
+.queue-item {
+  padding: 9px 12px; margin-bottom: 6px;
+  background: var(--card2); border: 1px solid var(--border); border-radius: var(--radius);
+}
 </style>
 </head>
 <body>
@@ -347,6 +388,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
   <span class="header-title">Z-Image Tools</span>
   <span class="header-ver">v2.0</span>
   <div class="header-spacer"></div>
+  <button class="btn-sm" onclick="showWSLGuide()" style="font-size:11px;padding:3px 8px" title="WSL → Windows 접속 가이드">ℹ WSL</button>
   <div id="statusDot" class="status-dot"></div>
   <span id="statusLabel" class="status-label">대기 중</span>
 </div>
@@ -357,6 +399,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
   <div class="tab"        data-tool="heic"       onclick="switchTab('heic')">🔄 HEIC 변환</div>
   <div class="tab"        data-tool="classifier" onclick="switchTab('classifier')">📂 이미지 분류</div>
   <div class="tab"        data-tool="clothing"   onclick="switchTab('clothing')">👗 의상 추출</div>
+  <div class="tab"        data-tool="queue"      onclick="switchTab('queue')">⏱ 배치 큐</div>
   <div class="tab"        data-tool="history"    onclick="switchTab('history')">📋 실행 이력</div>
 </div>
 
@@ -401,7 +444,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
             <div class="radio-btn" data-group="p-model" data-val="qwen35" onclick="selectModel(this)">Qwen3.5-9B — 상세한 묘사, 영어/중국어</div>
             <div class="radio-btn" data-group="p-model" data-val="huihui_vl" onclick="selectModel(this)">Huihui-Qwen3-VL ✦ — 검열 해제, 영어/중국어</div>
             <div class="radio-btn" data-group="p-model" data-val="huihui_35" onclick="selectModel(this)">Huihui-Qwen3.5 ✦ — 검열 해제, 영어/중국어</div>
-            <div class="radio-btn" data-group="p-model" data-val="joycaption" onclick="selectModel(this)">JoyCaption Alpha Two — 영어 전용 캡션 생성</div>
+            <div class="radio-btn" data-group="p-model" data-val="joycaption" onclick="selectModel(this)">JoyCaption Beta One — 영어 전용 캡션 생성</div>
           </div>
           <div id="model-desc" class="method-desc" style="margin-top:8px"></div>
         </div>
@@ -645,6 +688,21 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         </div>
       </div>
 
+      <!-- ══ 배치 큐 ══ -->
+      <div id="form-queue" class="tab-content">
+        <div class="section-title">배치 큐</div>
+        <p style="font-size:12.5px;color:var(--dim);line-height:1.6;margin-bottom:12px">
+          현재 탭의 설정을 큐에 추가하면 GPU를 순차 자동 처리합니다.<br>
+          실행 중인 작업이 없으면 즉시 처리가 시작됩니다.
+        </p>
+        <div class="section-title" style="margin-top:0">큐 목록</div>
+        <div id="queueList" style="min-height:36px"></div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn-sm" onclick="loadQueue()">새로고침</button>
+          <button class="btn-sm" style="color:var(--red)" onclick="clearQueue()">큐 초기화</button>
+        </div>
+      </div>
+
       <!-- ══ 이력 (설정 패널 없음) ══ -->
       <div id="form-history" class="tab-content">
         <div class="section-title">실행 이력</div>
@@ -657,10 +715,20 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
 
     </div><!-- /config-scroll -->
 
+    <!-- 썸네일 패널 -->
+    <div id="thumbPanel" class="thumb-panel hidden">
+      <div class="thumb-panel-hdr">
+        <span>이미지 미리보기</span>
+        <button class="btn-sm" onclick="closeThumbPanel()">✕</button>
+      </div>
+      <div id="thumbGrid" class="thumb-grid"></div>
+    </div>
+
     <!-- 실행 버튼 -->
     <div class="config-footer" id="runFooter">
       <button class="btn btn-run" id="btnRun" onclick="startRun()">▶ 실행</button>
       <button class="btn btn-stop" id="btnStop" onclick="stopRun()" disabled>■ 중단</button>
+      <button class="btn-sm" onclick="addToQueue()" title="현재 설정을 배치 큐에 추가" style="white-space:nowrap">+ 큐</button>
     </div>
   </div><!-- /panel-left -->
 
@@ -742,6 +810,26 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div style="font-size:13px;color:var(--cyan);word-break:break-all" id="outputPath"></div>
       </div>
 
+      <!-- 다운로드 진행 -->
+      <div class="stat-card full-width hidden" id="dlCard">
+        <div class="stat-label">모델 다운로드</div>
+        <div style="font-size:11.5px;color:var(--cyan);margin-bottom:6px;word-break:break-all;line-height:1.4" id="dlLabel"></div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill running" id="dlBar" style="width:0%"></div>
+        </div>
+        <div class="progress-count" id="dlCount">0%</div>
+      </div>
+
+      <!-- 결과 inline 뷰어 -->
+      <div class="stat-card full-width hidden" id="inlineViewer">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="stat-label" style="margin:0">생성된 프롬프트</div>
+          <button class="btn-sm" onclick="closeInlineViewer()">✕ 닫기</button>
+        </div>
+        <div class="copy-hint">클릭하면 클립보드에 복사됩니다</div>
+        <div id="inlinePromptList" style="max-height:300px;overflow-y:auto"></div>
+      </div>
+
       <!-- 이력 뷰어 (이력 탭에서만 표시) -->
       <div class="stat-card full-width hidden" id="historyViewer">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -769,6 +857,17 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
 
 </div><!-- /main -->
 
+<!-- WSL 가이드 모달 -->
+<div id="wslModal" class="modal-overlay hidden" onclick="closeWSLModal(event)">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <span style="font-size:15px;font-weight:700;color:var(--text)">WSL → Windows 접속 가이드</span>
+      <button class="btn-sm" onclick="document.getElementById('wslModal').classList.add('hidden')">✕</button>
+    </div>
+    <div id="wslContent"><div style="color:var(--muted);font-size:12px">로딩 중…</div></div>
+  </div>
+</div>
+
 <script>
 // ─── 상태 ───────────────────────────────────────────────
 let currentTool = 'prompt';
@@ -779,7 +878,7 @@ let autoScroll   = true;
 
 // 방식 설명
 const METHOD_DESC = {
-  '1': 'JoyCaption Alpha Two — 영어 전용. 가장 안정적. 2-pass 정제의 1차 캡션으로도 활용.',
+  '1': 'JoyCaption Beta One — 영어 전용. 가장 안정적. 2-pass 정제의 1차 캡션으로도 활용.',
   '2': 'Qwen3-VL-8B-Instruct — 최신 VL 모델. 영어/중국어 지원. 빠르고 정확.',
   '3': 'Qwen3.5-9B — 텍스트·비전 통합 모델. 영어/중국어. 상세한 묘사 강점.',
   '4': '2-pass: JoyCaption으로 1차 캡션 생성 → Qwen3-VL이 Z-Image 전용 프롬프트로 정제.',
@@ -797,12 +896,13 @@ function switchTab(tool) {
     c.classList.toggle('active', c.id === `form-${tool}`));
 
   const footer = document.getElementById('runFooter');
-  footer.style.display = tool === 'history' ? 'none' : 'flex';
+  footer.style.display = (tool === 'history' || tool === 'queue') ? 'none' : 'flex';
 
   if (tool === 'history') {
     loadHistory();
     document.getElementById('historyViewer').classList.add('hidden');
   }
+  if (tool === 'queue') loadQueue();
 }
 
 // ─── 모델 설명 ─────────────────────────────────────────
@@ -911,6 +1011,10 @@ async function scanFolder(inputId, countId, type) {
       const unit = type === 'heic' ? 'HEIC 파일' : type === 'txt' ? 'txt 파일' : '이미지';
       el.textContent = `✓ ${d.count}개 ${unit} 발견` + (d.sample ? `  (${d.sample.slice(0,3).join(', ')}${d.count>3?'…':''})` : '');
       el.className = 'count-badge visible';
+    }
+    // 이미지 스캔 후 썸네일 로딩
+    if (type === 'image' && d.exists && d.count > 0) {
+      loadThumbnails(folder);
     }
   } catch {
     el.textContent = '스캔 실패';
@@ -1025,10 +1129,11 @@ function connectStream(runId, total) {
   evtSource = new EventSource(`/api/stream/${runId}`);
   evtSource.onmessage = (e) => {
     const ev = JSON.parse(e.data);
-    if (ev.type === 'log')      handleLog(ev.data);
+    if (ev.type === 'log')           handleLog(ev.data);
     else if (ev.type === 'progress') handleProgress(ev.data, total);
     else if (ev.type === 'stats')    handleStats(ev.data);
     else if (ev.type === 'done')     handleDone(ev.data);
+    else if (ev.type === 'download') handleDownload(ev.data);
   };
   evtSource.onerror = () => {
     if (!isRunning) return;
@@ -1063,6 +1168,7 @@ function handleProgress(d, total) {
 
   if (d.filename) {
     document.getElementById('currentFile').textContent = '▶ ' + d.filename;
+    markThumbnailDone(d.filename);
   }
   if (d.elapsed_last != null) {
     document.getElementById('timeLast').textContent = d.elapsed_last.toFixed(1);
@@ -1114,6 +1220,12 @@ function handleDone(d) {
     if (d.output_dir) {
       document.getElementById('outputPath').textContent = d.output_dir;
     }
+    // 프롬프트 생성 완료 후 inline 뷰어 자동 표시
+    if (currentTool === 'prompt' && d.output_dir) {
+      showInlineResult(d.output_dir);
+    }
+    // 큐 목록 갱신
+    loadQueue();
   } else {
     const msg = d.error || `오류 (code ${d.returncode})`;
     document.getElementById('progText').textContent = '오류 발생';
@@ -1239,6 +1351,188 @@ function showToast(msg, type = '') {
   el.textContent = msg;
   document.body.appendChild(el);
   toastTimer = setTimeout(() => el.remove(), 3500);
+}
+
+// ─── 썸네일 패널 ───────────────────────────────────────
+let _thumbFolder = '';
+async function loadThumbnails(folder) {
+  _thumbFolder = folder;
+  const panel = document.getElementById('thumbPanel');
+  const grid  = document.getElementById('thumbGrid');
+  panel.classList.remove('hidden');
+  grid.innerHTML = '<div style="color:var(--muted);font-size:12px;grid-column:1/-1;padding:8px">로딩 중…</div>';
+  try {
+    const r = await fetch(`/api/images-list?folder=${encodeURIComponent(folder)}`);
+    const d = await r.json();
+    if (!d.images || !d.images.length) {
+      grid.innerHTML = '<div style="color:var(--muted);font-size:12px;grid-column:1/-1;padding:8px">이미지 없음</div>';
+      return;
+    }
+    grid.innerHTML = d.images.map(name => {
+      const eid = 'th-' + name.replace(/[^a-zA-Z0-9]/g, '_');
+      return `<div class="thumb-item" id="${eid}" title="${name}">
+        <img src="/api/image?path=${encodeURIComponent(folder + '/' + name)}&thumb=1" loading="lazy">
+        <div class="thumb-chk hidden">✓</div>
+      </div>`;
+    }).join('');
+  } catch {
+    grid.innerHTML = '<div style="color:var(--red);font-size:12px;grid-column:1/-1;padding:8px">로딩 실패</div>';
+  }
+}
+function markThumbnailDone(filename) {
+  if (!filename || !_thumbFolder) return;
+  const base = filename.split('/').pop().split('\\').pop();
+  const eid  = 'th-' + base.replace(/[^a-zA-Z0-9]/g, '_');
+  const el   = document.getElementById(eid);
+  if (el) {
+    el.classList.add('done');
+    const chk = el.querySelector('.thumb-chk');
+    if (chk) chk.classList.remove('hidden');
+  }
+}
+function closeThumbPanel() {
+  document.getElementById('thumbPanel').classList.add('hidden');
+  _thumbFolder = '';
+}
+
+// ─── 다운로드 진행 ──────────────────────────────────────
+let _dlHideTimer = null;
+function handleDownload(d) {
+  const card = document.getElementById('dlCard');
+  card.classList.remove('hidden');
+  document.getElementById('dlLabel').textContent = d.label || '';
+  const bar = document.getElementById('dlBar');
+  bar.style.width = d.pct + '%';
+  document.getElementById('dlCount').textContent = d.pct + '%';
+  if (d.pct >= 100) {
+    bar.classList.remove('running');
+    bar.classList.add('done');
+    if (_dlHideTimer) clearTimeout(_dlHideTimer);
+    _dlHideTimer = setTimeout(() => card.classList.add('hidden'), 3000);
+  } else {
+    bar.classList.add('running');
+    bar.classList.remove('done');
+  }
+}
+
+// ─── Inline 결과 뷰어 ───────────────────────────────────
+async function showInlineResult(outputDir) {
+  try {
+    const r = await fetch(`/api/read?path=${encodeURIComponent(outputDir + '/prompts.txt')}`);
+    const d = await r.json();
+    if (d.error || !d.lines || !d.lines.length) return;
+    const entries = [];
+    let buf = [];
+    for (const ln of d.lines) {
+      if (ln === '' && buf.length) { entries.push(buf.join('\n')); buf = []; }
+      else if (ln) buf.push(ln);
+    }
+    if (buf.length) entries.push(buf.join('\n'));
+    if (!entries.length) return;
+    const plist = document.getElementById('inlinePromptList');
+    plist.innerHTML = entries.map((e, i) =>
+      `<div class="prompt-entry" onclick="copyText(this)">[${i+1}] ${e}</div>`
+    ).join('');
+    document.getElementById('inlineViewer').classList.remove('hidden');
+  } catch { /* ignore */ }
+}
+function closeInlineViewer() {
+  document.getElementById('inlineViewer').classList.add('hidden');
+}
+
+// ─── WSL 접속 가이드 ────────────────────────────────────
+async function showWSLGuide() {
+  document.getElementById('wslModal').classList.remove('hidden');
+  const content = document.getElementById('wslContent');
+  content.innerHTML = '<div style="color:var(--muted);font-size:12px">IP 확인 중…</div>';
+  try {
+    const r = await fetch('/api/info');
+    const d = await r.json();
+    const ip   = d.wsl_ip || '127.0.0.1';
+    const port = d.port   || 7860;
+    content.innerHTML = `
+      <div style="font-size:13px;line-height:1.8;color:var(--dim)">
+        <p style="margin-bottom:12px">WSL2 내부 서버를 Windows 브라우저에서 접속하려면 포트 포워딩이 필요합니다.</p>
+        <div class="stat-label" style="margin-bottom:5px">WSL2 IP</div>
+        <code style="display:block;padding:7px 12px;background:var(--card2);border-radius:6px;color:var(--cyan);margin-bottom:12px">${ip}</code>
+        <div class="stat-label" style="margin-bottom:5px">Windows PowerShell (관리자) — 포트 포워딩</div>
+        <code onclick="copyCode(this)" title="클릭하여 복사" style="display:block;padding:7px 12px;background:var(--card2);border-radius:6px;color:var(--text);font-size:11.5px;margin-bottom:6px;white-space:pre-wrap;cursor:pointer">netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=${port} connectaddress=${ip} connectport=${port}</code>
+        <div class="stat-label" style="margin-bottom:5px">Windows PowerShell (관리자) — 방화벽 허용</div>
+        <code onclick="copyCode(this)" title="클릭하여 복사" style="display:block;padding:7px 12px;background:var(--card2);border-radius:6px;color:var(--text);font-size:11.5px;margin-bottom:12px;white-space:pre-wrap;cursor:pointer">netsh advfirewall firewall add rule name="WSL2-ZImageTools" dir=in action=allow protocol=TCP localport=${port}</code>
+        <div class="stat-label" style="margin-bottom:5px">Windows 브라우저 접속 주소</div>
+        <code style="display:block;padding:7px 12px;background:var(--card2);border-radius:6px;color:var(--green);margin-bottom:10px">http://[Windows PC IP]:${port}</code>
+        <p style="font-size:11px;color:var(--muted)">WSL2 재시작 시 IP가 바뀔 수 있으므로 매번 위 명령을 다시 실행하세요.<br>코드 블록을 클릭하면 복사됩니다.</p>
+      </div>`;
+  } catch {
+    content.innerHTML = '<div style="color:var(--red)">정보 불러오기 실패</div>';
+  }
+}
+async function copyCode(el) {
+  try {
+    await navigator.clipboard.writeText(el.textContent.trim());
+    const orig = el.style.borderColor;
+    el.style.outline = '1px solid var(--green)';
+    setTimeout(() => el.style.outline = orig, 800);
+  } catch { showToast('복사 실패', 'error'); }
+}
+function closeWSLModal(e) {
+  if (e.target.id === 'wslModal') document.getElementById('wslModal').classList.add('hidden');
+}
+
+// ─── 배치 큐 ────────────────────────────────────────────
+async function addToQueue() {
+  const data = getFormData();
+  if (!data.tool) { showToast('폼 데이터 없음', 'error'); return; }
+  try {
+    const r = await fetch('/api/queue/add', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const d = await r.json();
+    if (d.error) { showToast('큐 추가 실패: ' + d.error, 'error'); return; }
+    showToast('큐에 추가됨 #' + d.job_id, 'success');
+    loadQueue();
+  } catch(e) { showToast('오류: ' + e.message, 'error'); }
+}
+
+async function loadQueue() {
+  const list = document.getElementById('queueList');
+  if (!list) return;
+  try {
+    const r = await fetch('/api/queue/list');
+    const d = await r.json();
+    if (!d.jobs || !d.jobs.length) {
+      list.innerHTML = '<div style="color:var(--muted);font-size:12px">큐가 비어있습니다</div>';
+      return;
+    }
+    const SC = { pending:'var(--yellow)', running:'var(--green)', done:'var(--cyan)', error:'var(--red)', cancelled:'var(--muted)' };
+    const SL = { pending:'대기', running:'실행 중', done:'완료', error:'오류', cancelled:'취소됨' };
+    list.innerHTML = d.jobs.map(j => `
+      <div class="queue-item">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+          <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,.3);color:${SC[j.status]||'var(--dim)'}">${SL[j.status]||j.status}</span>
+          <span style="font-size:12px;color:var(--text);font-weight:500">${j.tool}</span>
+          <span style="font-size:10px;color:var(--muted);margin-left:auto">#${j.id}</span>
+        </div>
+        ${j.output_dir ? `<div style="font-size:11px;color:var(--cyan);word-break:break-all">${j.output_dir}</div>` : ''}
+        <div style="margin-top:5px;display:flex;gap:6px">
+          ${j.status === 'pending' ? `<button class="btn-sm" onclick="removeFromQueue('${j.id}')">제거</button>` : ''}
+          ${j.run_id ? `<button class="btn-sm" onclick="connectStream('${j.run_id}',0)">스트림 연결</button>` : ''}
+        </div>
+      </div>`).join('');
+  } catch {
+    list.innerHTML = '<div style="color:var(--red);font-size:12px">불러오기 실패</div>';
+  }
+}
+async function clearQueue() {
+  await fetch('/api/queue/clear', {method:'POST'});
+  loadQueue();
+  showToast('큐 초기화됨', 'success');
+}
+async function removeFromQueue(id) {
+  await fetch(`/api/queue/remove/${id}`, {method:'POST'});
+  loadQueue();
 }
 
 // ─── 초기화 ─────────────────────────────────────────────

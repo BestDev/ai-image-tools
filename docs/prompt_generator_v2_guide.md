@@ -2,7 +2,7 @@
 
 > 최종 업데이트: 2026-03-15
 > 환경: WSL2 / Ubuntu-24.04 / RTX 4090 24GB / Python 3.12
-> 가상환경: `/home/bestdev/ai_training/venv-prompt`
+> 가상환경: `<저장소 루트>/venv-prompt`
 > 검증 상태: transformers 5.2.0 / bitsandbytes 0.49.2 / GPU 실행 확인
 
 ---
@@ -25,17 +25,21 @@
 ## 1. 개요
 
 이미지를 분석하여 **Z-Image Turbo에 최적화된 서술형 프롬프트**를 자동 생성한다.  
-v2는 v1 대비 5가지 방식을 단일 스크립트로 통합하였으며, 누적 재개(`--accumulate`) 기능을 지원한다.
+v2는 9가지 방식을 단일 스크립트로 통합하였으며, 누적 재개(`--accumulate`) 기능을 지원한다.
 
 ### 지원 방식
 
 | 방식 | 모델(들) | 언어 | VRAM | 특징 |
 |------|---------|------|------|------|
-| 1 | JoyCaption-Beta-One | EN only | ~9 GB | raw 캡션, 가장 빠름 |
-| 2 | Qwen3-VL-8B-Instruct | EN / ZH | ~17 GB | 이미지 직접 분석, 고품질 |
+| 1 | JoyCaption Beta One | EN only | ~10 GB | raw 캡션, 가장 빠름 |
+| 2 | Qwen3-VL-8B-Instruct | EN / ZH | ~16 GB | 이미지 직접 분석, 고품질 |
 | 3 | Qwen3.5-9B | EN / ZH | ~18 GB | 이미지 직접 분석, 상세 묘사 |
-| 4 | JoyCaption → Qwen3-VL | EN / ZH | ~17 GB | 2-pass: raw 캡션 → 정제 |
+| 4 | JoyCaption → Qwen3-VL | EN / ZH | ~16 GB | 2-pass: raw 캡션 → 정제 |
 | 5 | JoyCaption → Qwen3.5 | EN / ZH | ~18 GB | 2-pass: raw 캡션 → 정제 |
+| 6 | Huihui-Qwen3-VL (✦검열 해제) | EN / ZH | ~16 GB | 이미지 직접 분석, 필터 없음 |
+| 7 | Huihui-Qwen3.5 (✦검열 해제) | EN / ZH | ~18 GB | 이미지 직접 분석, 필터 없음 |
+| 8 | JoyCaption → Huihui-Qwen3-VL | EN / ZH | ~16 GB | 2-pass 정제, 검열 해제 |
+| 9 | JoyCaption → Huihui-Qwen3.5 | EN / ZH | ~18 GB | 2-pass 정제, 검열 해제 |
 
 ### 지원 이미지 형식
 
@@ -48,7 +52,7 @@ v2는 v1 대비 5가지 방식을 단일 스크립트로 통합하였으며, 누
 ### 2.1 가상환경 생성
 
 ```bash
-cd /home/bestdev/ai_training
+cd /path/to/image-classifier   # 저장소 루트
 python3 -m venv venv-prompt
 source venv-prompt/bin/activate
 ```
@@ -56,9 +60,13 @@ source venv-prompt/bin/activate
 ### 2.2 패키지 설치
 
 ```bash
+# requirements 파일 사용 (권장)
+pip install -r requirements-prompt.txt
+
+# 또는 수동 설치
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install transformers>=5.2.0 accelerate bitsandbytes
-pip install Pillow pillow-heif
+pip install Pillow pillow-heif flask psutil
 ```
 
 ### 2.3 모델 사전 다운로드 (선택)
@@ -100,7 +108,7 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 |------|------|--------|------|
 | `input` | — | 필수 | 이미지 파일 또는 폴더 경로 |
 | `--output-dir` | `-o` | 필수 | 출력 폴더 경로 |
-| `--method` | `-m` | `2` | 방식 선택 (1~5) |
+| `--method` | `-m` | `2` | 방식 선택 (1~9) |
 | `--lang` | — | `en` | 출력 언어: `en` (영어) / `zh` (중국어) |
 | `--quant` | — | `bf16` | 양자화: `bf16` / `nf4` / `int8` |
 | `--accumulate` | `-a` | off | 누적 재개 모드 (기존 결과 유지, 미완성분만 처리) |
@@ -345,7 +353,7 @@ pip install pillow-heif
 | 항목 | v1 | v2 |
 |------|----|----|
 | 스크립트 | 방식별 별도 스크립트 | 단일 스크립트로 통합 |
-| 방식 수 | 5가지 | 5가지 (동일, 통합) |
+| 방식 수 | 5가지 | 9가지 (통합 + abliterated 4가지 추가) |
 | 누적 재개 | 지원 | 지원 (`--accumulate`) |
 | 파일 초기화 | 재실행 시 append 문제 | 비누적 모드에서 자동 초기화 |
 | 이미지 정렬 | 전체 경로 기준 sort | 파일명 기준 sort (`p.name`) |
@@ -361,6 +369,8 @@ pip install pillow-heif
 |------|------|------|
 | 6 | `huihui-ai/Huihui-Qwen3-VL-8B-Instruct-abliterated` | Qwen3-VL-8B 기반 |
 | 7 | `huihui-ai/Huihui-Qwen3.5-9B-abliterated` | Qwen3.5-9B 기반 |
+| 8 | JoyCaption → Huihui-Qwen3-VL | m4의 검열 해제 버전 |
+| 9 | JoyCaption → Huihui-Qwen3.5 | m5의 검열 해제 버전 |
 
 abliterated 모델은 원본 모델과 동일한 아키텍처를 사용하며, 콘텐츠 필터(거부/검열)가 제거된 버전이다.  
 누드, 성인 이미지 등 원본 모델이 거부하거나 할루시네이션을 일으킬 수 있는 이미지에 대해 일관된 묘사를 생성한다.
@@ -387,10 +397,12 @@ python3 prompt_generator_v2.py image/dataset -o output/ab_35_zh --method 7 --lan
 
 ### 실측 성능 (RTX 4090 24GB, bf16, 10장 테스트)
 
-| 방식 | 평균 속도 | VRAM | 첫 실행(다운로드) |
-|------|-----------|------|-----------------|
-| 6 (Huihui-Qwen3-VL) | ~8.4초/장 | ~16 GB | 모델 다운로드 포함 265초 |
-| 7 (Huihui-Qwen3.5) | 측정 중 | ~18 GB | — |
+| 방식 | 평균 속도 | VRAM | 비고 |
+|------|-----------|------|------|
+| 6 (Huihui-Qwen3-VL) | ~8.4초/장 | ~16 GB | 원본 m2와 동급 속도 |
+| 7 (Huihui-Qwen3.5) | ~9.5초/장 | ~18 GB | 원본 m3와 동급 속도 |
+| 8 (JoyCaption→Huihui-VL) | ~7.1초/장* | ~16 GB | Pass 1 캐시 재사용 기준 |
+| 9 (JoyCaption→Huihui-3.5) | ~9.1초/장* | ~18 GB | Pass 1 캐시 재사용 기준 |
 
 ### 원본 vs Abliterated 비교
 
