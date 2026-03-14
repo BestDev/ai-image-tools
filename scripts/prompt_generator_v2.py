@@ -138,8 +138,8 @@ def load_joycaption(quant: str = "bf16"):
     else:
         kwargs["torch_dtype"] = torch.bfloat16
 
-    model = LlavaForConditionalGeneration.from_pretrained(MODEL_JOYCAPTION, **kwargs)
-    processor = AutoProcessor.from_pretrained(MODEL_JOYCAPTION, use_fast=False)
+    model = LlavaForConditionalGeneration.from_pretrained(MODEL_JOYCAPTION, local_files_only=True, **kwargs)
+    processor = AutoProcessor.from_pretrained(MODEL_JOYCAPTION, use_fast=False, local_files_only=True)
     model.eval()
 
     # nf4: MultiheadAttention.out_proj 패치
@@ -209,8 +209,8 @@ def load_qwen3vl(quant: str = "bf16", model_id: str = MODEL_QWEN3VL):
     else:
         kwargs["torch_dtype"] = torch.bfloat16
 
-    model = Qwen3VLForConditionalGeneration.from_pretrained(model_id, **kwargs)
-    processor = AutoProcessor.from_pretrained(model_id)
+    model = Qwen3VLForConditionalGeneration.from_pretrained(model_id, local_files_only=True, **kwargs)
+    processor = AutoProcessor.from_pretrained(model_id, local_files_only=True)
     model.eval()
     print(f"  로드 완료 ({time.time() - t:.1f}초)")
     return model, processor
@@ -290,8 +290,8 @@ def load_qwen35(quant: str = "bf16", model_id: str = MODEL_QWEN35):
     else:
         kwargs["torch_dtype"] = torch.bfloat16
 
-    model = Qwen3_5ForConditionalGeneration.from_pretrained(model_id, **kwargs)
-    processor = AutoProcessor.from_pretrained(model_id)
+    model = Qwen3_5ForConditionalGeneration.from_pretrained(model_id, local_files_only=True, **kwargs)
+    processor = AutoProcessor.from_pretrained(model_id, local_files_only=True)
     model.eval()
     print(f"  로드 완료 ({time.time() - t:.1f}초)")
     return model, processor
