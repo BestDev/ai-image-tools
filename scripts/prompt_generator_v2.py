@@ -424,17 +424,27 @@ def unload(model, processor):
 # 누적/재개 헬퍼
 # ──────────────────────────────────────────────
 def _count_prompts(filepath: Path) -> int:
+    """prompts.txt용: 한 줄 = 한 프롬프트 기준으로 카운트"""
+    if not filepath.exists():
+        return 0
+    lines = [l for l in filepath.read_text(encoding="utf-8").splitlines() if l.strip()]
+    return len(lines)
+
+
+def _count_prompts_raw(filepath: Path) -> int:
+    """prompts_raw.txt용: --- 구분자 기준으로 카운트"""
     if not filepath.exists():
         return 0
     text = filepath.read_text(encoding="utf-8").strip()
     if not text:
         return 0
-    return len([p for p in text.split("\n\n") if p.strip()])
+    return len([p for p in text.split("\n---\n") if p.strip()])
 
 
 def _read_prompts(filepath: Path) -> list:
+    """prompts_raw.txt용: --- 구분자 기준으로 파싱"""
     text = filepath.read_text(encoding="utf-8").strip()
-    return [p.strip() for p in text.split("\n\n") if p.strip()]
+    return [p.strip() for p in text.split("\n---\n") if p.strip()]
 
 
 def _clear_file(filepath: Path):
@@ -444,11 +454,20 @@ def _clear_file(filepath: Path):
 
 
 def _append_prompt(filepath: Path, prompt: str, index: int):
+    """prompts.txt용: 줄바꿈을 공백으로 압축 → 한 줄 = 한 프롬프트"""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    single_line = " ".join(prompt.split())
+    with open(filepath, "a", encoding="utf-8") as f:
+        f.write(single_line + "\n")
+
+
+def _append_prompt_raw(filepath: Path, prompt: str, index: int):
+    """prompts_raw.txt용: 단락 구조 보존, --- 구분자 사용"""
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, "a", encoding="utf-8") as f:
         if index > 0:
-            f.write("\n")
-        f.write(prompt + "\n")
+            f.write("---\n")
+        f.write(prompt.strip() + "\n")
 
 
 def _vram_info() -> str:
@@ -491,7 +510,7 @@ def run_method1(images: list, args):
             print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
             print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
             _append_prompt(out_file, result, i)
-            _append_prompt(raw_file, result, i)
+            _append_prompt_raw(raw_file, result, i)
         except Exception as e:
             print(f"  오류: {e}")
 
@@ -576,7 +595,7 @@ def run_method4(images: list, args):
         _clear_file(raw_file)
         _clear_file(out_file)
     # ── Pass 1: JoyCaption raw 생성 ──
-    raw_done = _count_prompts(raw_file) if args.accumulate else 0
+    raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
     if raw_done < total:
         print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
         imgs_p1 = images[raw_done:]
@@ -592,7 +611,7 @@ def run_method4(images: list, args):
                 elapsed = time.time() - t
                 timings.append(elapsed)
                 print(f"    완료 ({elapsed:.1f}초)")
-                _append_prompt(raw_file, raw, i)
+                _append_prompt_raw(raw_file, raw, i)
             except Exception as e:
                 print(f"    오류: {e}")
 
@@ -642,7 +661,7 @@ def run_method5(images: list, args):
         _clear_file(raw_file)
         _clear_file(out_file)
     # ── Pass 1: JoyCaption raw 생성 ──
-    raw_done = _count_prompts(raw_file) if args.accumulate else 0
+    raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
     if raw_done < total:
         print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
         imgs_p1 = images[raw_done:]
@@ -658,7 +677,7 @@ def run_method5(images: list, args):
                 elapsed = time.time() - t
                 timings.append(elapsed)
                 print(f"    완료 ({elapsed:.1f}초)")
-                _append_prompt(raw_file, raw, i)
+                _append_prompt_raw(raw_file, raw, i)
             except Exception as e:
                 print(f"    오류: {e}")
 
@@ -787,7 +806,7 @@ def run_method8(images: list, args):
     if not args.accumulate:
         _clear_file(raw_file)
         _clear_file(out_file)
-    raw_done = _count_prompts(raw_file) if args.accumulate else 0
+    raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
     if raw_done < total:
         print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
         joy_model, joy_proc = load_joycaption(args.quant)
@@ -801,7 +820,7 @@ def run_method8(images: list, args):
                 elapsed = time.time() - t
                 timings.append(elapsed)
                 print(f"    완료 ({elapsed:.1f}초)")
-                _append_prompt(raw_file, raw, i)
+                _append_prompt_raw(raw_file, raw, i)
             except Exception as e:
                 print(f"    오류: {e}")
         unload(joy_model, joy_proc)
@@ -842,7 +861,7 @@ def run_method9(images: list, args):
     if not args.accumulate:
         _clear_file(raw_file)
         _clear_file(out_file)
-    raw_done = _count_prompts(raw_file) if args.accumulate else 0
+    raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
     if raw_done < total:
         print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
         joy_model, joy_proc = load_joycaption(args.quant)
@@ -856,7 +875,7 @@ def run_method9(images: list, args):
                 elapsed = time.time() - t
                 timings.append(elapsed)
                 print(f"    완료 ({elapsed:.1f}초)")
-                _append_prompt(raw_file, raw, i)
+                _append_prompt_raw(raw_file, raw, i)
             except Exception as e:
                 print(f"    오류: {e}")
         unload(joy_model, joy_proc)

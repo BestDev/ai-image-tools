@@ -221,10 +221,11 @@ def main():
 
         if ok:
             out_txt.write_text(text, encoding="utf-8")
-            # 누적 파일에 이미지명 헤더와 함께 추가
+            # 누적 파일에 추가: 줄바꿈 압축 → 한 줄 = 한 프롬프트
             if collect_path:
+                single_line = " ".join(text.split())
                 with collect_path.open("a", encoding="utf-8") as cf:
-                    cf.write(f"# {image.name}\n{text}\n\n")
+                    cf.write(single_line + "\n")
             # 첫 60자만 미리보기
             preview = text[:60].replace("\n", " ")
             print(f"\r{prefix} OK    {image.name}  |  {preview}...")
