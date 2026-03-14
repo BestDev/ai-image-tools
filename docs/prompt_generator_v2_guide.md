@@ -350,3 +350,53 @@ pip install pillow-heif
 | 파일 초기화 | 재실행 시 append 문제 | 비누적 모드에서 자동 초기화 |
 | 이미지 정렬 | 전체 경로 기준 sort | 파일명 기준 sort (`p.name`) |
 | 2-pass 캐시 | 미지원 | prompts_raw.txt 재활용 가능 |
+
+---
+
+## 11. Abliterated 모델 (검열 해제)
+
+### 지원 모델
+
+| 방식 | 모델 | 기반 |
+|------|------|------|
+| 6 | `huihui-ai/Huihui-Qwen3-VL-8B-Instruct-abliterated` | Qwen3-VL-8B 기반 |
+| 7 | `huihui-ai/Huihui-Qwen3.5-9B-abliterated` | Qwen3.5-9B 기반 |
+
+abliterated 모델은 원본 모델과 동일한 아키텍처를 사용하며, 콘텐츠 필터(거부/검열)가 제거된 버전이다.  
+누드, 성인 이미지 등 원본 모델이 거부하거나 할루시네이션을 일으킬 수 있는 이미지에 대해 일관된 묘사를 생성한다.
+
+### 사용법
+
+```bash
+# Method 6: Huihui-Qwen3-VL abliterated (영어)
+TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
+python3 prompt_generator_v2.py image/dataset -o output/ab_vl_en --method 6 --lang en
+
+# Method 6: Huihui-Qwen3-VL abliterated (중국어)
+TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
+python3 prompt_generator_v2.py image/dataset -o output/ab_vl_zh --method 6 --lang zh
+
+# Method 7: Huihui-Qwen3.5 abliterated (영어)
+TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
+python3 prompt_generator_v2.py image/dataset -o output/ab_35_en --method 7 --lang en
+
+# Method 7: Huihui-Qwen3.5 abliterated (중국어)
+TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
+python3 prompt_generator_v2.py image/dataset -o output/ab_35_zh --method 7 --lang zh
+```
+
+### 실측 성능 (RTX 4090 24GB, bf16, 10장 테스트)
+
+| 방식 | 평균 속도 | VRAM | 첫 실행(다운로드) |
+|------|-----------|------|-----------------|
+| 6 (Huihui-Qwen3-VL) | ~8.4초/장 | ~16 GB | 모델 다운로드 포함 265초 |
+| 7 (Huihui-Qwen3.5) | 측정 중 | ~18 GB | — |
+
+### 원본 vs Abliterated 비교
+
+| 항목 | 원본 (m2/m3) | Abliterated (m6/m7) |
+|------|-------------|---------------------|
+| 누드 이미지 묘사 | 일부 거부/할루시네이션 가능 | 필터 없이 정확 묘사 |
+| 일반 이미지 품질 | 동일 | 동일 |
+| 속도 | 동일 | 동일 |
+| VRAM | 동일 | 동일 |

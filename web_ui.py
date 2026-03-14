@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+"""
+Z-Image Tools - Web UI
+Flask 기반 통합 웹 인터페이스
+
+실행: python3 web_ui.py [--port 7860]
+접속: http://localhost:7860
+"""
+import sys
+import os
+from pathlib import Path
+
+_VENV_DIR = Path(__file__).resolve().parent / "venv-prompt"
+if _VENV_DIR.exists() and Path(sys.prefix) != _VENV_DIR:
+    os.execv(str(_VENV_DIR / "bin" / "python3"),
+             [str(_VENV_DIR / "bin" / "python3")] + sys.argv)
+
+import argparse
+import json
+import queue
+import re
+import subprocess
+import threading
+import time
+import uuid
+from datetime import datetime
+
+import psutil
+from flask import Flask, Response, jsonify, request, send_file
+
+app = Flask(__name__)
+BASE_DIR = Path(__file__).resolve().parent
+VENV_PY = str(_VENV_DIR / "bin" / "python3")
+
+IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".heic", ".heif"}
+HEIC_EXT  = {".heic", ".heif"}
+
+runs: dict = {}
+runs_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# 시스템 통계
+# ---------------------------------------------------------------------------
+
+def gpu_stats() -> dict:
+    try:
+        r = subprocess.run(
+            ["nvidia-smi",
+             "--query-gpu=utilization.gpu,memory.used,memory.free,memory.total",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3)
+        if r.returncode == 0:
+            p = [x.strip() for x in r.stdout.strip().split(",")]
+            if len(p) >= 4:
+                return {
+                    "gpu_pct":    int(p[0]),
+                    "vram_used":  int(p[1]),
+                    "vram_free":  int(p[2]),
+                    "vram_total": int(p[3]),
+                }
+    except Exception:
+        pass
+    return {}
+
+
+def ram_stats() -> dict:
+    vm = psutil.virtual_memory()
+    return {"ram_used": vm.used >> 20, "ram_total": vm.total >> 20}
+
+
+# ---------------------------------------------------------------------------
+# 커맨드 빌더
+# ---------------------------------------------------------------------------
+
+def build_cmd(tool: str, params: dict):
+    """Returns (cmd, total_images, output_dir)"""
+
+    if tool == "prompt":
+        folder = params.get("input_folder", "image/dataset")
+        path = (BASE_DIR / folder).resolve()
+        method = int(params.get("method", 2))
+        ts = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        output_dir = params.get("output_dir") or f"logs/{ts}-m{method}"
+        cmd = [
+            VENV_PY, str(BASE_DIR / "scripts" / "prompt_generator_v2.py"),
+            str(path),
+            "--output-dir", output_dir,
+            "--method", str(method),
+            "--quant", params.get("quant", "bf16"),
+            "--lang", params.get("lang", "en"),
+        ]
+        if params.get("accumulate"):
+            cmd.append("--accumulate")
+        imgs = (len([p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT])
+                if path.is_dir() else 1)
+        return cmd, imgs, output_dir
+
+    elif tool == "heic":
+        folder = params.get("input_dir", "image/dataset")
+        path = (BASE_DIR / folder).resolve()
+        cmd = [
+            VENV_PY, str(BASE_DIR / "scripts" / "heic_to_jpeg.py"), str(path),
+            "--quality", str(params.get("quality", 95)),
+        ]
+        if params.get("keep"):      cmd.append("--keep")
+        if params.get("recursive"): cmd.append("--recursive")
+        if params.get("dry_run"):   cmd.append("--dry-run")
+        glob_fn = path.rglob if params.get("recursive") else path.iterdir
+        imgs = (len([p for p in glob_fn("*") if p.suffix.lower() in HEIC_EXT])
+                if path.is_dir() else 1)
+        return cmd, imgs, str(path)
+
+    elif tool == "classifier":
+        folder = params.get("input_dir", "image/dataset")
+        path = (BASE_DIR / folder).resolve()
+        by = params.get("by", "style")
+        cmd = [VENV_PY, str(BASE_DIR / "scripts" / "image_classifier.py"), str(path), "--by", by]
+        if params.get("file_op") == "move":    cmd.append("--move")
+        elif params.get("file_op") == "copy":  cmd.append("--copy")
+        if params.get("output_dir"): cmd += ["--output-dir", params["output_dir"]]
+        if by == "style":
+            cmd += ["--model", params.get("model", "openai/clip-vit-large-patch14")]
+            if params.get("verbose"): cmd.append("--verbose")
+        elif by == "background":
+            cmd += ["--bg-threshold", str(params.get("bg_threshold", 15.0))]
+        imgs = (len([p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT])
+                if path.is_dir() else 1)
+        return cmd, imgs, str(path)
+
+    elif tool == "clothing":
+        mode = params.get("mode", "spacy")
+        inp  = params.get("input_path", "prompts")
+        out  = params.get("output_path", "output")
+        cmd = [
+            VENV_PY, str(BASE_DIR / "scripts" / "extract_clothing.py"),
+            "--mode", mode,
+            "--input", inp,
+            "--output", out,
+        ]
+        if mode == "ollama":
+            cmd += ["--model",      params.get("ollama_model", "huihui_ai/qwen3.5-abliterated:35b")]
+            cmd += ["--batch",      str(params.get("ollama_batch", 5))]
+            cmd += ["--ollama-url", params.get("ollama_url", "http://host.docker.internal:11434")]
+        return cmd, 0, out
+
+    raise ValueError(f"알 수 없는 tool: {tool}")
+
+
+# ---------------------------------------------------------------------------
+# 프로세스 실행 (백그라운드 스레드)
+# ---------------------------------------------------------------------------
+
+RE_IMG_START  = re.compile(r"^\[(\d+)/(\d+)\]\s+(.+)$")
+RE_IMG_DONE   = re.compile(r"완료\s+\(([0-9.]+)초\)\s+\|\s+(\d+)단어")
+RE_HEIC_DONE  = re.compile(r"[✓→]\s|변환\s+완료|저장")
+RE_CLASS_DONE = re.compile(r"→\s+\w+|분류\s+완료")
+
+
+def run_process(run_id: str, cmd: list, total: int):
+    state = runs[run_id]
+    env = {**os.environ, "TORCHINDUCTOR_DISABLED": "1", "TORCH_COMPILE_DISABLE": "1"}
+    timings: list[float] = []
+
+    def emit(t, d):
+        state["queue"].put({"type": t, "data": d})
+
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, env=env, cwd=str(BASE_DIR))
+        state["process"] = proc
+
+        # 주기적 시스템 통계
+        stop_evt = threading.Event()
+        def _poll():
+            while not stop_evt.wait(2.0):
+                emit("stats", {**gpu_stats(), **ram_stats()})
+        threading.Thread(target=_poll, daemon=True).start()
+
+        generic_done = 0  # 상세 파싱 불가 도구용 카운터
+
+        for line in proc.stdout:
+            line = line.rstrip()
+            emit("log", {"text": line})
+
+            # 프롬프트 생성: [N/M] filename
+            m = RE_IMG_START.match(line.strip())
+            if m:
+                cur, tot, fname = int(m.group(1)), int(m.group(2)), m.group(3)
+                state["current_file"] = fname
+                avg = sum(timings) / len(timings) if timings else None
+                emit("progress", {
+                    "current": cur - 1, "total": tot, "filename": fname,
+                    "avg_sec": avg,
+                    "eta_sec": (tot - cur + 1) * avg if avg else None,
+                })
+                continue
+
+            # 프롬프트 생성: 완료 줄
+            m2 = RE_IMG_DONE.search(line)
+            if m2:
+                elapsed = float(m2.group(1))
+                timings.append(elapsed)
+                done = len(timings)
+                avg  = sum(timings) / done
+                emit("progress", {
+                    "current": done, "total": total,
+                    "filename": state.get("current_file", ""),
+                    "elapsed_last": elapsed, "avg_sec": avg,
+                    "eta_sec": max(0, (total - done) * avg),
+                })
+                continue
+
+            # 기타 도구: 단순 카운팅
+            if RE_HEIC_DONE.search(line) or RE_CLASS_DONE.search(line):
+                generic_done += 1
+                if total > 0:
+                    emit("progress", {"current": generic_done, "total": total,
+                                      "filename": line[:60]})
+
+        proc.wait()
+        stop_evt.set()
+        state["finished"] = True
+        success = proc.returncode == 0
+        emit("done", {
+            "success": success,
+            "output_dir": state["output_dir"],
+            "completed": len(timings) or generic_done,
+            "total": total,
+            **({"returncode": proc.returncode} if not success else {}),
+        })
+
+    except Exception as e:
+        state["finished"] = True
+        emit("done", {"success": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# Flask 라우트
+# ---------------------------------------------------------------------------
+
+@app.route("/")
+def index():
+    return send_file(BASE_DIR / "html" / "web_ui.html")
+
+
+@app.route("/api/scan")
+def scan_folder():
+    """폴더 내 파일 수 스캔"""
+    folder   = request.args.get("folder", "")
+    ext_type = request.args.get("type", "image")   # image | heic | txt
+    if not folder:
+        return jsonify({"count": 0, "exists": False})
+    path = (BASE_DIR / folder).resolve()
+    if not path.exists():
+        return jsonify({"count": 0, "exists": False})
+    if path.is_file():
+        return jsonify({"count": 1, "exists": True})
+    if ext_type == "heic":
+        exts = HEIC_EXT
+    elif ext_type == "txt":
+        files = sorted(p.name for p in path.iterdir() if p.suffix == ".txt")
+        return jsonify({"count": len(files), "exists": True, "sample": files[:5]})
+    else:
+        exts = IMAGE_EXT
+    imgs = sorted(p.name for p in path.iterdir() if p.suffix.lower() in exts)
+    return jsonify({"count": len(imgs), "exists": True, "sample": imgs[:5]})
+
+
+@app.route("/api/run", methods=["POST"])
+def start_run():
+    data = request.json or {}
+    tool = data.get("tool", "prompt")
+    try:
+        cmd, total, output_dir = build_cmd(tool, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+    run_id = str(uuid.uuid4())[:8]
+    with runs_lock:
+        runs[run_id] = {
+            "run_id": run_id, "tool": tool, "output_dir": output_dir,
+            "started_at": time.time(), "finished": False,
+            "process": None, "queue": queue.Queue(),
+            "total": total, "current_file": "",
+        }
+    threading.Thread(target=run_process, args=(run_id, cmd, total), daemon=True).start()
+    return jsonify({"run_id": run_id, "output_dir": output_dir, "total": total})
+
+
+@app.route("/api/stream/<run_id>")
+def stream(run_id):
+    if run_id not in runs:
+        return jsonify({"error": "not found"}), 404
+    state = runs[run_id]
+
+    def generate():
+        # 시작 즉시 초기 stats 전송
+        yield f"data: {json.dumps({'type': 'stats', 'data': {**gpu_stats(), **ram_stats()}})}\n\n"
+        while True:
+            try:
+                ev = state["queue"].get(timeout=1.0)
+                yield f"data: {json.dumps(ev)}\n\n"
+                if ev["type"] == "done":
+                    break
+            except queue.Empty:
+                if state["finished"]:
+                    break
+                yield ": keepalive\n\n"
+
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/stop/<run_id>", methods=["POST"])
+def stop_run(run_id):
+    state = runs.get(run_id)
+    if not state:
+        return jsonify({"error": "not found"}), 404
+    proc = state.get("process")
+    if proc and proc.poll() is None:
+        proc.terminate()
+        time.sleep(0.3)
+        if proc.poll() is None:
+            proc.kill()
+    state["finished"] = True
+    return jsonify({"ok": True})
+
+
+@app.route("/api/history")
+def get_history():
+    logs_dir = BASE_DIR / "logs"
+    if not logs_dir.exists():
+        return jsonify({"runs": []})
+    result = []
+    for d in sorted(logs_dir.iterdir(), reverse=True):
+        if not d.is_dir():
+            continue
+        pt = d / "prompts.txt"
+        count = 0
+        if pt.exists():
+            with open(pt) as f:
+                count = sum(1 for ln in f if ln.strip())
+        result.append({"name": d.name, "has_prompts": pt.exists(), "count": count})
+    return jsonify({"runs": result[:50]})
+
+
+@app.route("/api/read")
+def read_file():
+    """텍스트 파일 내용 반환 (history viewer용)"""
+    path_str = request.args.get("path", "")
+    if not path_str:
+        return jsonify({"error": "path required"}), 400
+    path = (BASE_DIR / path_str).resolve()
+    # 보안: BASE_DIR 하위만 허용
+    try:
+        path.relative_to(BASE_DIR)
+    except ValueError:
+        return jsonify({"error": "접근 불가"}), 403
+    if not path.exists() or not path.is_file():
+        return jsonify({"error": "파일 없음"}), 404
+    with open(path, encoding="utf-8") as f:
+        lines = [ln.rstrip() for ln in f]
+    return jsonify({"lines": lines, "count": len(lines)})
+
+
+# ---------------------------------------------------------------------------
+# 엔트리포인트
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description="Z-Image Tools Web UI")
+    p.add_argument("--port", type=int, default=7860)
+    p.add_argument("--host", default="0.0.0.0")
+    a = p.parse_args()
+
+    print(f"\n{'='*40}")
+    print(f"  Z-Image Tools Web UI")
+    print(f"  http://localhost:{a.port}")
+    print(f"{'='*40}\n")
+
+    try:
+        import webbrowser
+        threading.Timer(1.2, lambda: webbrowser.open(f"http://localhost:{a.port}")).start()
+    except Exception:
+        pass
+
+    app.run(host=a.host, port=a.port, threaded=True, debug=False)

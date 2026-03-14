@@ -36,6 +36,8 @@ import gc
 MODEL_JOYCAPTION = "fancyfeast/llama-joycaption-beta-one-hf-llava"
 MODEL_QWEN3VL    = "Qwen/Qwen3-VL-8B-Instruct"
 MODEL_QWEN35     = "Qwen/Qwen3.5-9B"
+MODEL_QWEN3VL_AB = "huihui-ai/Huihui-Qwen3-VL-8B-Instruct-abliterated"
+MODEL_QWEN35_AB  = "huihui-ai/Huihui-Qwen3.5-9B-abliterated"
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".heic", ".heif"}
 
@@ -192,11 +194,12 @@ def run_joycaption(image_path: str, model, processor) -> str:
 # ──────────────────────────────────────────────
 # Qwen3-VL-8B 로더 / 추론
 # ──────────────────────────────────────────────
-def load_qwen3vl(quant: str = "bf16"):
+def load_qwen3vl(quant: str = "bf16", model_id: str = MODEL_QWEN3VL):
     import torch
     from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 
-    print(f"[로드] Qwen3-VL-8B ({quant}) ...")
+    label = model_id.split("/")[-1]
+    print(f"[로드] {label} ({quant}) ...")
     t = time.time()
     kwargs = {"device_map": "auto"}
     if quant == "nf4":
@@ -206,8 +209,8 @@ def load_qwen3vl(quant: str = "bf16"):
     else:
         kwargs["torch_dtype"] = torch.bfloat16
 
-    model = Qwen3VLForConditionalGeneration.from_pretrained(MODEL_QWEN3VL, **kwargs)
-    processor = AutoProcessor.from_pretrained(MODEL_QWEN3VL)
+    model = Qwen3VLForConditionalGeneration.from_pretrained(model_id, **kwargs)
+    processor = AutoProcessor.from_pretrained(model_id)
     model.eval()
     print(f"  로드 완료 ({time.time() - t:.1f}초)")
     return model, processor
@@ -272,11 +275,12 @@ def run_qwen3vl_refine(raw_text: str, model, processor, lang: str = "en") -> str
 # ──────────────────────────────────────────────
 # Qwen3.5-9B 로더 / 추론
 # ──────────────────────────────────────────────
-def load_qwen35(quant: str = "bf16"):
+def load_qwen35(quant: str = "bf16", model_id: str = MODEL_QWEN35):
     import torch
     from transformers import Qwen3_5ForConditionalGeneration, AutoProcessor
 
-    print(f"[로드] Qwen3.5-9B ({quant}) ...")
+    label = model_id.split("/")[-1]
+    print(f"[로드] {label} ({quant}) ...")
     t = time.time()
     kwargs = {"device_map": "auto"}
     if quant == "nf4":
@@ -286,8 +290,8 @@ def load_qwen35(quant: str = "bf16"):
     else:
         kwargs["torch_dtype"] = torch.bfloat16
 
-    model = Qwen3_5ForConditionalGeneration.from_pretrained(MODEL_QWEN35, **kwargs)
-    processor = AutoProcessor.from_pretrained(MODEL_QWEN35)
+    model = Qwen3_5ForConditionalGeneration.from_pretrained(model_id, **kwargs)
+    processor = AutoProcessor.from_pretrained(model_id)
     model.eval()
     print(f"  로드 완료 ({time.time() - t:.1f}초)")
     return model, processor
@@ -665,6 +669,72 @@ def _print_stats(timings: list, total: int, label: str = ""):
 # ──────────────────────────────────────────────
 # 메인
 # ──────────────────────────────────────────────
+
+def run_method6(images: list, args):
+    """Huihui-Qwen3-VL-8B abliterated 직접 이미지 분석 → prompts.txt"""
+    out_dir = Path(args.output_dir)
+    out_file = out_dir / "prompts.txt"
+
+    if not args.accumulate:
+        _clear_file(out_file)
+    done = _count_prompts(out_file) if args.accumulate else 0
+    if done:
+        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
+    images = images[done:]
+
+    model, processor = load_qwen3vl(args.quant, MODEL_QWEN3VL_AB)
+    print(f"VRAM: {_vram_info()}\n")
+
+    timings = []
+    for i, img_path in enumerate(images, done):
+        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
+        t = time.time()
+        try:
+            result = run_qwen3vl_image(img_path, model, processor, lang=args.lang)
+            elapsed = time.time() - t
+            timings.append(elapsed)
+            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
+            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
+            _append_prompt(out_file, result, i)
+        except Exception as e:
+            print(f"  오류: {e}")
+
+    unload(model, processor)
+    _print_stats(timings, len(images) + done)
+
+
+def run_method7(images: list, args):
+    """Huihui-Qwen3.5-9B abliterated 직접 이미지 분석 → prompts.txt"""
+    out_dir = Path(args.output_dir)
+    out_file = out_dir / "prompts.txt"
+
+    if not args.accumulate:
+        _clear_file(out_file)
+    done = _count_prompts(out_file) if args.accumulate else 0
+    if done:
+        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
+    images = images[done:]
+
+    model, processor = load_qwen35(args.quant, MODEL_QWEN35_AB)
+    print(f"VRAM: {_vram_info()}\n")
+
+    timings = []
+    for i, img_path in enumerate(images, done):
+        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
+        t = time.time()
+        try:
+            result = run_qwen35_image(img_path, model, processor, lang=args.lang)
+            elapsed = time.time() - t
+            timings.append(elapsed)
+            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
+            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
+            _append_prompt(out_file, result, i)
+        except Exception as e:
+            print(f"  오류: {e}")
+
+    unload(model, processor)
+    _print_stats(timings, len(images) + done)
+
 def main():
     parser = argparse.ArgumentParser(
         description="Z-Image Turbo 프롬프트 생성 v2",
@@ -673,13 +743,15 @@ def main():
     parser.add_argument("input", help="이미지 파일 또는 폴더 경로")
     parser.add_argument("--output-dir", "-o", required=True, help="출력 폴더 경로")
     parser.add_argument(
-        "--method", "-m", type=int, default=2, choices=[1, 2, 3, 4, 5],
+        "--method", "-m", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7],
         help=(
             "1: JoyCaption (영어 전용)\n"
             "2: Qwen3-VL-8B 직접 분석\n"
             "3: Qwen3.5-9B 직접 분석\n"
             "4: JoyCaption → Qwen3-VL-8B 정제\n"
-            "5: JoyCaption → Qwen3.5-9B 정제"
+            "5: JoyCaption → Qwen3.5-9B 정제\n"
+            "6: Huihui-Qwen3-VL-8B abliterated 직접 분석\n"
+            "7: Huihui-Qwen3.5-9B abliterated 직접 분석"
         ),
     )
     parser.add_argument(
@@ -717,7 +789,7 @@ def main():
 
     # method 1은 항상 영어
     lang = args.lang
-    if args.method == 1:
+    if args.method in (1,):
         lang = "en"
         if args.lang != "en":
             print("※ method 1(JoyCaption)은 영어 전용입니다. --lang 옵션 무시.")
@@ -728,6 +800,8 @@ def main():
         3: "Qwen3.5-9B 직접 분석",
         4: "JoyCaption → Qwen3-VL-8B 정제",
         5: "JoyCaption → Qwen3.5-9B 정제",
+        6: "Huihui-Qwen3-VL-8B abliterated 직접 분석",
+        7: "Huihui-Qwen3.5-9B abliterated 직접 분석",
     }
 
     print(f"\n=== Z-Image Turbo 프롬프트 생성 v2 ===")
@@ -748,6 +822,8 @@ def main():
         3: run_method3,
         4: run_method4,
         5: run_method5,
+        6: run_method6,
+        7: run_method7,
     }
     dispatch[args.method](images, args)
 

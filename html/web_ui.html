@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Z-Image Tools</title>
+<style>
+:root {
+  --bg:       #0d0d14;
+  --surface:  #14141f;
+  --card:     #1a1a2e;
+  --card2:    #202038;
+  --border:   #2a2a45;
+  --accent:   #7c6af7;
+  --accent-d: #5b4fcf;
+  --cyan:     #06b6d4;
+  --green:    #22c55e;
+  --yellow:   #eab308;
+  --red:      #ef4444;
+  --text:     #e2e8f0;
+  --dim:      #94a3b8;
+  --muted:    #475569;
+  --radius:   8px;
+  --font:     system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 헤더 ── */
+.header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.header-logo { font-size: 20px; }
+.header-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.header-ver { font-size: 11px; color: var(--muted); margin-left: 4px; }
+.header-spacer { flex: 1; }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted); transition: background .3s;
+}
+.status-dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.5s infinite; }
+.status-dot.error   { background: var(--red); }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+.status-label { font-size: 12px; color: var(--dim); }
+
+/* ── 탭 ── */
+.tabs {
+  display: flex; gap: 2px;
+  padding: 8px 16px 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tab {
+  padding: 7px 16px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer; font-size: 13px;
+  color: var(--muted); border: 1px solid transparent;
+  border-bottom: none; transition: all .15s;
+  user-select: none;
+}
+.tab:hover { color: var(--dim); background: var(--card); }
+.tab.active {
+  color: var(--text); background: var(--card);
+  border-color: var(--border); border-bottom-color: var(--card);
+  position: relative; top: 1px;
+}
+
+/* ── 메인 레이아웃 ── */
+.main {
+  display: flex; flex: 1; overflow: hidden;
+}
+.panel-left {
+  width: 400px; min-width: 340px;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.panel-right {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+.panel-top {
+  flex: 1; padding: 16px; overflow-y: auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  align-content: start;
+}
+.terminal-area {
+  height: 260px; min-height: 140px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.terminal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.terminal-header span { font-size: 12px; color: var(--dim); font-weight: 600; letter-spacing: .5px; }
+.terminal-body {
+  flex: 1; overflow-y: auto; overflow-x: auto;
+  background: #080810; padding: 10px 14px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12.5px; line-height: 1.7; white-space: pre;
+}
+.terminal-body .t-dim    { color: #555; }
+.terminal-body .t-ok     { color: var(--green); }
+.terminal-body .t-warn   { color: var(--yellow); }
+.terminal-body .t-err    { color: var(--red); }
+.terminal-body .t-accent { color: var(--accent); }
+
+/* ── 설정 패널 내부 ── */
+.config-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+.config-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  display: flex; gap: 8px; flex-shrink: 0;
+}
+.section-title {
+  font-size: 11px; font-weight: 700; letter-spacing: .8px;
+  color: var(--muted); text-transform: uppercase;
+  margin: 16px 0 8px;
+}
+.section-title:first-child { margin-top: 0; }
+.form-row {
+  margin-bottom: 12px; position: relative;
+}
+.form-label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--dim); margin-bottom: 5px; font-weight: 500;
+}
+.field-hint {
+  font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4;
+}
+select, input[type=text], input[type=number] {
+  width: 100%; padding: 7px 10px;
+  background: var(--card2); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--font); font-size: 13px;
+  transition: border-color .15s; outline: none;
+  appearance: none;
+}
+select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 28px; cursor: pointer; }
+select:focus, input:focus { border-color: var(--accent); }
+select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
+.method-desc {
+  font-size: 11.5px; color: var(--cyan); margin-top: 4px;
+  padding: 6px 8px; background: rgba(6,182,212,.07);
+  border-left: 2px solid var(--cyan); border-radius: 0 4px 4px 0;
+  line-height: 1.5;
+}
+.checkbox-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px; cursor: pointer;
+}
+.checkbox-row input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+.checkbox-row label { font-size: 13px; color: var(--dim); cursor: pointer; user-select: none; }
+.radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
+.radio-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border); border-radius: 20px;
+  font-size: 12px; color: var(--dim); cursor: pointer;
+  transition: all .15s; user-select: none;
+}
+.radio-btn:hover { border-color: var(--accent); color: var(--text); }
+.radio-btn.selected { border-color: var(--accent); background: rgba(124,106,247,.15); color: var(--text); }
+.folder-row { display: flex; gap: 6px; }
+.folder-row input { flex: 1; }
+.scan-btn {
+  padding: 0 10px; background: var(--card2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--dim); cursor: pointer; font-size: 12px;
+  white-space: nowrap; transition: all .15s;
+}
+.scan-btn:hover { border-color: var(--accent); color: var(--text); }
+.count-badge {
+  font-size: 11px; color: var(--green); margin-top: 3px;
+  display: none;
+}
+.count-badge.visible { display: block; }
+.count-badge.error { color: var(--red); }
+.input-inline { display: flex; gap: 6px; align-items: center; }
+.input-inline input { flex: 1; }
+.input-inline span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+/* ── 버튼 ── */
+.btn {
+  padding: 9px 20px; border-radius: var(--radius);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  border: none; transition: all .15s; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.btn-run  { background: var(--accent); color: #fff; flex: 1; justify-content: center; }
+.btn-run:hover { background: var(--accent-d); }
+.btn-run:disabled { background: var(--muted); cursor: not-allowed; }
+.btn-stop { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
+.btn-stop:hover { background: rgba(239,68,68,.25); }
+.btn-stop:disabled { opacity: .3; cursor: not-allowed; }
+.btn-sm {
+  padding: 4px 10px; font-size: 12px; border-radius: 5px;
+  cursor: pointer; border: none; background: var(--card2);
+  color: var(--dim); transition: all .15s;
+}
+.btn-sm:hover { color: var(--text); background: var(--border); }
+
+/* ── 진행 상황 카드 ── */
+.stat-card {
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px;
+}
+.stat-card.full-width { grid-column: 1 / -1; }
+.stat-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; }
+.stat-value { font-size: 22px; font-weight: 700; color: var(--text); }
+.stat-sub   { font-size: 11.5px; color: var(--dim); margin-top: 2px; }
+.progress-wrap { margin-top: 8px; }
+.progress-bar-bg {
+  height: 8px; background: var(--border); border-radius: 4px; overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%; background: var(--accent); border-radius: 4px;
+  transition: width .4s ease; width: 0%;
+}
+.progress-bar-fill.running {
+  background: linear-gradient(90deg, var(--accent) 0%, var(--cyan) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.progress-bar-fill.done   { background: var(--green); }
+.progress-bar-fill.error  { background: var(--red); }
+.progress-count { font-size: 12px; color: var(--dim); margin-top: 4px; text-align: right; }
+.current-file { font-size: 11.5px; color: var(--cyan); margin-top: 6px; word-break: break-all; min-height: 16px; }
+
+/* ── 게이지 바 ── */
+.gauge-row { margin-bottom: 10px; }
+.gauge-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.gauge-name  { font-size: 12px; color: var(--dim); font-weight: 500; }
+.gauge-value { font-size: 12px; color: var(--text); font-weight: 600; }
+.gauge-bg { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.gauge-fill {
+  height: 100%; border-radius: 3px;
+  background: var(--green); transition: width .5s ease, background .3s;
+}
+.gauge-fill.warn  { background: var(--yellow); }
+.gauge-fill.crit  { background: var(--red); }
+
+/* ── 타이밍 정보 ── */
+.timing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.timing-item { text-align: center; }
+.timing-num  { font-size: 18px; font-weight: 700; color: var(--text); }
+.timing-lbl  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* ── 이력 탭 ── */
+.history-list { padding: 12px; }
+.history-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 6px;
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: var(--radius); cursor: pointer; transition: border-color .15s;
+}
+.history-item:hover { border-color: var(--accent); }
+.history-name { font-size: 13px; color: var(--text); font-weight: 500; flex: 1; }
+.history-count { font-size: 12px; color: var(--green); }
+.history-no { font-size: 12px; color: var(--muted); }
+.history-detail {
+  display: none; padding: 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.history-detail.open { display: block; }
+.prompt-entry {
+  padding: 8px 10px; margin-bottom: 6px;
+  background: var(--card2); border-radius: 5px;
+  font-size: 12.5px; color: var(--dim); line-height: 1.6;
+  cursor: pointer; transition: background .15s;
+  white-space: pre-wrap; word-break: break-word;
+}
+.prompt-entry:hover { background: var(--card); color: var(--text); }
+.copy-hint { font-size: 10.5px; color: var(--muted); text-align: right; margin-top: -2px; margin-bottom: 6px; }
+
+/* ── 툴팁 ── */
+.tip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--muted); color: #fff; font-size: 9px; font-weight: 700;
+  cursor: help; position: relative; flex-shrink: 0;
+}
+.tip::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%);
+  background: #1e1e3a; color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 7px 10px; font-size: 11.5px; line-height: 1.5;
+  white-space: pre-wrap; width: max-content; max-width: 260px;
+  opacity: 0; pointer-events: none; z-index: 100;
+  transition: opacity .15s; font-weight: 400;
+}
+.tip:hover::after { opacity: 1; }
+
+/* ── 숨기기 ── */
+.hidden { display: none !important; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ── 스크롤바 ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── 알림 토스트 ── */
+.toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 999;
+  padding: 10px 16px; border-radius: var(--radius);
+  background: var(--card2); border: 1px solid var(--border);
+  color: var(--text); font-size: 13px;
+  animation: fadeIn .2s ease; box-shadow: 0 4px 20px rgba(0,0,0,.4);
+}
+.toast.success { border-color: var(--green); color: var(--green); }
+.toast.error   { border-color: var(--red);   color: var(--red); }
+@keyframes fadeIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<!-- 헤더 -->
+<div class="header">
+  <span class="header-logo">🖼</span>
+  <span class="header-title">Z-Image Tools</span>
+  <span class="header-ver">v2.0</span>
+  <div class="header-spacer"></div>
+  <div id="statusDot" class="status-dot"></div>
+  <span id="statusLabel" class="status-label">대기 중</span>
+</div>
+
+<!-- 탭 바 -->
+<div class="tabs">
+  <div class="tab active" data-tool="prompt"     onclick="switchTab('prompt')">🎯 프롬프트 생성</div>
+  <div class="tab"        data-tool="heic"       onclick="switchTab('heic')">🔄 HEIC 변환</div>
+  <div class="tab"        data-tool="classifier" onclick="switchTab('classifier')">📂 이미지 분류</div>
+  <div class="tab"        data-tool="clothing"   onclick="switchTab('clothing')">👗 의상 추출</div>
+  <div class="tab"        data-tool="history"    onclick="switchTab('history')">📋 실행 이력</div>
+</div>
+
+<!-- 메인 -->
+<div class="main">
+
+  <!-- 설정 패널 (좌) -->
+  <div class="panel-left" id="configPanel">
+    <div class="config-scroll" id="configScroll">
+
+      <!-- ══ 프롬프트 생성 ══ -->
+      <div id="form-prompt" class="tab-content active">
+        <div class="section-title">입력</div>
+
+        <div class="form-row">
+          <div class="form-label">
+            입력 폴더
+            <span class="tip" data-tip="분석할 이미지가 들어있는 폴더 경로&#10;프로젝트 루트 기준 상대경로 또는 절대경로">?</span>
+          </div>
+          <div class="folder-row">
+            <input type="text" id="p-input" value="image/dataset" oninput="clearCount('p-count')">
+            <button class="scan-btn" onclick="scanFolder('p-input','p-count','image')">스캔</button>
+          </div>
+          <div id="p-count" class="count-badge"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-label">
+            출력 폴더
+            <span class="tip" data-tip="비워두면 logs/YYYY-MM-DD-HHMMSS-m{N} 으로 자동 생성&#10;기존 폴더 지정 + 이어서 실행 체크 시 재개 가능">?</span>
+          </div>
+          <input type="text" id="p-output" placeholder="자동 생성 (logs/날짜-방식)">
+        </div>
+
+        <div class="section-title">생성 방식</div>
+
+        <div class="form-row">
+          <div class="form-label">
+            방식
+            <span class="tip" data-tip="프롬프트를 생성할 AI 모델 선택&#10;abliterated = 검열 해제 버전 (성인 이미지 포함 가능)">?</span>
+          </div>
+          <select id="p-method" onchange="onMethodChange()">
+            <option value="1">1 — JoyCaption Alpha Two (영어 전용)</option>
+            <option value="2" selected>2 — Qwen3-VL-8B-Instruct</option>
+            <option value="3">3 — Qwen3.5-9B</option>
+            <option value="4">4 — JoyCaption → Qwen3-VL (2-pass)</option>
+            <option value="5">5 — JoyCaption → Qwen3.5 (2-pass)</option>
+            <option value="6">6 — Huihui-Qwen3-VL abliterated ✦</option>
+            <option value="7">7 — Huihui-Qwen3.5 abliterated ✦</option>
+          </select>
+          <div id="method-desc" class="method-desc"></div>
+        </div>
+
+        <div class="section-title">옵션</div>
+
+        <div class="form-row">
+          <div class="form-label">
+            양자화
+            <span class="tip" data-tip="bf16: 최고 품질, VRAM ~16-20GB 필요&#10;nf4:  4비트, VRAM 절반, 품질 소폭 저하&#10;int8: 8비트, VRAM 중간, 속도·품질 균형">?</span>
+          </div>
+          <select id="p-quant">
+            <option value="bf16" selected>bf16 — 최고 품질 (VRAM ~16-20GB)</option>
+            <option value="nf4">nf4 — 4비트 양자화 (VRAM ~8-10GB)</option>
+            <option value="int8">int8 — 8비트 양자화 (VRAM ~12GB)</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-label">
+            언어
+            <span class="tip" data-tip="en: 영어 프롬프트 (대부분 이미지 생성 AI 권장)&#10;zh: 중국어 프롬프트 (Z-Image Turbo 이중언어 지원)&#10;방식 1(JoyCaption)은 영어 전용">?</span>
+          </div>
+          <select id="p-lang">
+            <option value="en" selected>English (영어)</option>
+            <option value="zh">中文 (중국어)</option>
+          </select>
+        </div>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="p-accum">
+          <label for="p-accum">이어서 실행 (--accumulate)</label>
+          <span class="tip" data-tip="이미 생성된 항목은 건너뛰고 나머지만 처리&#10;중단된 작업을 재개할 때 사용">?</span>
+        </div>
+      </div>
+
+      <!-- ══ HEIC 변환 ══ -->
+      <div id="form-heic" class="tab-content">
+        <div class="section-title">입력</div>
+        <div class="form-row">
+          <div class="form-label">
+            입력 폴더
+            <span class="tip" data-tip="HEIC/HEIF 파일이 있는 폴더&#10;iPhone 등에서 가져온 원본 폴더 지정">?</span>
+          </div>
+          <div class="folder-row">
+            <input type="text" id="h-input" value="image/dataset" oninput="clearCount('h-count')">
+            <button class="scan-btn" onclick="scanFolder('h-input','h-count','heic')">스캔</button>
+          </div>
+          <div id="h-count" class="count-badge"></div>
+        </div>
+
+        <div class="section-title">옵션</div>
+        <div class="form-row">
+          <div class="form-label">
+            JPEG 품질
+            <span class="tip" data-tip="1~100, 기본 95&#10;높을수록 파일 크기 증가, 화질 향상&#10;AI 학습용은 90~95 권장">?</span>
+          </div>
+          <div class="input-inline">
+            <input type="number" id="h-quality" value="95" min="1" max="100">
+            <span>/ 100</span>
+          </div>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="h-keep">
+          <label for="h-keep">원본 HEIC 파일 유지 (기본: 삭제)</label>
+          <span class="tip" data-tip="체크 해제 시 변환 후 원본 HEIC 삭제&#10;체크 시 HEIC + JPEG 둘 다 보존">?</span>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="h-recursive">
+          <label for="h-recursive">하위 폴더 재귀 처리</label>
+          <span class="tip" data-tip="체크 시 지정 폴더의 모든 하위 폴더까지 탐색">?</span>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="h-dry">
+          <label for="h-dry">드라이런 (실제 변환 없이 목록만)</label>
+          <span class="tip" data-tip="실제로 파일을 변환하지 않고&#10;처리될 파일 목록과 수만 출력">?</span>
+        </div>
+      </div>
+
+      <!-- ══ 이미지 분류 ══ -->
+      <div id="form-classifier" class="tab-content">
+        <div class="section-title">입력</div>
+        <div class="form-row">
+          <div class="form-label">
+            입력 폴더
+            <span class="tip" data-tip="분류할 이미지가 있는 폴더">?</span>
+          </div>
+          <div class="folder-row">
+            <input type="text" id="c-input" value="image/dataset" oninput="clearCount('c-count')">
+            <button class="scan-btn" onclick="scanFolder('c-input','c-count','image')">스캔</button>
+          </div>
+          <div id="c-count" class="count-badge"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-label">
+            출력 폴더
+            <span class="tip" data-tip="분류 결과를 저장할 폴더&#10;비워두면 입력폴더/by_{기준} 으로 자동 생성">?</span>
+          </div>
+          <input type="text" id="c-output" placeholder="자동 생성 (입력폴더/by_{기준})">
+        </div>
+
+        <div class="section-title">분류 기준</div>
+        <div class="form-row">
+          <div class="form-label">
+            분류 축
+            <span class="tip" data-tip="style: 화풍 분류 — photorealistic / anime / 3d_render 등 (CLIP 모델)&#10;background: 배경 복잡도 — solid / complex (OpenCV)&#10;person: 인물 수 — no_person / single / multiple (YOLO)">?</span>
+          </div>
+          <select id="c-by" onchange="onClassifierByChange()">
+            <option value="style" selected>style — 화풍 (photorealistic/anime/3d_render…)</option>
+            <option value="background">background — 배경 복잡도 (solid/complex)</option>
+            <option value="person">person — 인물 수 (none/single/multiple)</option>
+          </select>
+        </div>
+
+        <div id="c-style-opts">
+          <div class="form-row">
+            <div class="form-label">
+              CLIP 모델
+              <span class="tip" data-tip="clip-vit-large: 일반적, 빠름&#10;siglip-so400m: 더 정확, 느림">?</span>
+            </div>
+            <select id="c-model">
+              <option value="openai/clip-vit-large-patch14" selected>CLIP ViT-L/14 (빠름)</option>
+              <option value="google/siglip-so400m-patch14-384">SigLIP SO400M (정확)</option>
+            </select>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="c-verbose">
+            <label for="c-verbose">세부 점수 출력 (--verbose)</label>
+            <span class="tip" data-tip="각 이미지의 카테고리별 확률 점수를 출력">?</span>
+          </div>
+        </div>
+
+        <div id="c-bg-opts" class="hidden">
+          <div class="form-row">
+            <div class="form-label">
+              단색 임계값 (bg-threshold)
+              <span class="tip" data-tip="낮을수록 단색 판정이 까다로워짐&#10;기본값 15.0 권장">?</span>
+            </div>
+            <input type="number" id="c-bg-threshold" value="15.0" min="0" step="0.5">
+          </div>
+        </div>
+
+        <div class="section-title">파일 처리</div>
+        <div class="form-row">
+          <div class="form-label">
+            파일 작업
+            <span class="tip" data-tip="없음: 분류 CSV만 생성, 파일 이동/복사 없음&#10;복사: 원본 유지 + 분류 폴더에 복사&#10;이동: 분류 폴더로 이동 (원본 삭제)">?</span>
+          </div>
+          <div class="radio-group">
+            <div class="radio-btn selected" data-group="file-op" data-val="none" onclick="selectRadio(this)">없음 (CSV만)</div>
+            <div class="radio-btn" data-group="file-op" data-val="copy" onclick="selectRadio(this)">복사</div>
+            <div class="radio-btn" data-group="file-op" data-val="move" onclick="selectRadio(this)">이동</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 의상 추출 ══ -->
+      <div id="form-clothing" class="tab-content">
+        <div class="section-title">입력</div>
+        <div class="form-row">
+          <div class="form-label">
+            입력 경로
+            <span class="tip" data-tip="프롬프트가 담긴 .txt 파일 또는 폴더 경로&#10;prompt_generator_v2 출력 폴더(logs/…) 지정 가능">?</span>
+          </div>
+          <div class="folder-row">
+            <input type="text" id="cl-input" value="prompts" oninput="clearCount('cl-count')">
+            <button class="scan-btn" onclick="scanFolder('cl-input','cl-count','txt')">스캔</button>
+          </div>
+          <div id="cl-count" class="count-badge"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-label">
+            출력 폴더
+            <span class="tip" data-tip="추출 결과를 저장할 폴더 경로&#10;기본값: output/">?</span>
+          </div>
+          <input type="text" id="cl-output" value="output">
+        </div>
+
+        <div class="section-title">추출 방식</div>
+        <div class="form-row">
+          <div class="form-label">
+            모드
+            <span class="tip" data-tip="spacy: 경량 NLP 기반, 빠름 (로컬 전용)&#10;ollama: LLM 기반, 더 정확, Ollama 서버 필요">?</span>
+          </div>
+          <div class="radio-group">
+            <div class="radio-btn selected" data-group="cl-mode" data-val="spacy" onclick="selectRadio(this);toggleOllama()">spaCy (빠름)</div>
+            <div class="radio-btn" data-group="cl-mode" data-val="ollama" onclick="selectRadio(this);toggleOllama()">Ollama LLM (정확)</div>
+          </div>
+        </div>
+
+        <div id="ollama-opts" class="hidden">
+          <div class="form-row">
+            <div class="form-label">
+              Ollama 모델
+              <span class="tip" data-tip="Ollama에서 실행할 모델명&#10;예: qwen3:8b, huihui_ai/qwen3.5-abliterated:35b">?</span>
+            </div>
+            <input type="text" id="cl-ollama-model" value="huihui_ai/qwen3.5-abliterated:35b">
+          </div>
+          <div class="form-row">
+            <div class="form-label">
+              배치 크기
+              <span class="tip" data-tip="한 번에 처리할 프롬프트 수&#10;클수록 빠르나 파싱 오류 위험 증가">?</span>
+            </div>
+            <input type="number" id="cl-batch" value="5" min="1" max="50">
+          </div>
+          <div class="form-row">
+            <div class="form-label">
+              Ollama URL
+              <span class="tip" data-tip="Ollama 서버 주소&#10;WSL → Windows: http://host.docker.internal:11434&#10;동일 머신: http://localhost:11434">?</span>
+            </div>
+            <input type="text" id="cl-ollama-url" value="http://host.docker.internal:11434">
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 이력 (설정 패널 없음) ══ -->
+      <div id="form-history" class="tab-content">
+        <div class="section-title">실행 이력</div>
+        <p style="font-size:12.5px;color:var(--dim);line-height:1.6">
+          이전 실행 결과를 클릭하면 오른쪽 패널에서 생성된 프롬프트를 확인할 수 있습니다.<br>
+          프롬프트를 클릭하면 클립보드에 복사됩니다.
+        </p>
+        <div id="historyList" style="margin-top:12px"></div>
+      </div>
+
+    </div><!-- /config-scroll -->
+
+    <!-- 실행 버튼 -->
+    <div class="config-footer" id="runFooter">
+      <button class="btn btn-run" id="btnRun" onclick="startRun()">▶ 실행</button>
+      <button class="btn btn-stop" id="btnStop" onclick="stopRun()" disabled>■ 중단</button>
+    </div>
+  </div><!-- /panel-left -->
+
+  <!-- 우측 패널 -->
+  <div class="panel-right">
+    <div class="panel-top" id="statusPanel">
+
+      <!-- 진행 카드 -->
+      <div class="stat-card full-width" id="progressCard">
+        <div class="stat-label">진행 상황</div>
+        <div class="stat-value" id="progText">대기 중</div>
+        <div class="current-file" id="currentFile"></div>
+        <div class="progress-wrap">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progBar"></div>
+          </div>
+          <div class="progress-count" id="progCount"></div>
+        </div>
+      </div>
+
+      <!-- 타이밍 -->
+      <div class="stat-card full-width" id="timingCard">
+        <div class="stat-label">처리 속도</div>
+        <div class="timing-grid">
+          <div class="timing-item">
+            <div class="timing-num" id="timeLast">—</div>
+            <div class="timing-lbl">마지막 (초)</div>
+          </div>
+          <div class="timing-item">
+            <div class="timing-num" id="timeAvg">—</div>
+            <div class="timing-lbl">평균 (초)</div>
+          </div>
+          <div class="timing-item">
+            <div class="timing-num" id="timeETA">—</div>
+            <div class="timing-lbl">예상 완료 (초)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GPU -->
+      <div class="stat-card">
+        <div class="stat-label">GPU 사용률</div>
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">GPU</span>
+            <span class="gauge-value" id="gpuPct">—%</span>
+          </div>
+          <div class="gauge-bg"><div class="gauge-fill" id="gpuBar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <!-- VRAM -->
+      <div class="stat-card">
+        <div class="stat-label">VRAM</div>
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">VRAM</span>
+            <span class="gauge-value" id="vramVal">—</span>
+          </div>
+          <div class="gauge-bg"><div class="gauge-fill" id="vramBar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <!-- RAM -->
+      <div class="stat-card">
+        <div class="stat-label">RAM</div>
+        <div class="gauge-row">
+          <div class="gauge-header">
+            <span class="gauge-name">RAM</span>
+            <span class="gauge-value" id="ramVal">—</span>
+          </div>
+          <div class="gauge-bg"><div class="gauge-fill" id="ramBar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <!-- 출력 경로 -->
+      <div class="stat-card full-width" id="outputCard" style="display:none">
+        <div class="stat-label">출력 경로</div>
+        <div style="font-size:13px;color:var(--cyan);word-break:break-all" id="outputPath"></div>
+      </div>
+
+      <!-- 이력 뷰어 (이력 탭에서만 표시) -->
+      <div class="stat-card full-width hidden" id="historyViewer">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="stat-label" style="margin:0">프롬프트 목록</div>
+          <button class="btn-sm" onclick="document.getElementById('promptList').innerHTML='';document.getElementById('historyViewer').classList.add('hidden')">✕ 닫기</button>
+        </div>
+        <div class="copy-hint">클릭하면 클립보드에 복사됩니다</div>
+        <div id="promptList" style="max-height:360px;overflow-y:auto"></div>
+      </div>
+
+    </div><!-- /panel-top -->
+
+    <!-- 터미널 -->
+    <div class="terminal-area">
+      <div class="terminal-header">
+        <span>TERMINAL</span>
+        <div style="display:flex;gap:6px">
+          <button class="btn-sm" onclick="autoScroll=!autoScroll;this.textContent=autoScroll?'자동스크롤 ON':'자동스크롤 OFF'">자동스크롤 ON</button>
+          <button class="btn-sm" onclick="clearTerminal()">지우기</button>
+        </div>
+      </div>
+      <div class="terminal-body" id="terminal"></div>
+    </div>
+  </div><!-- /panel-right -->
+
+</div><!-- /main -->
+
+<script>
+// ─── 상태 ───────────────────────────────────────────────
+let currentTool = 'prompt';
+let currentRunId = null;
+let evtSource    = null;
+let isRunning    = false;
+let autoScroll   = true;
+
+// 방식 설명
+const METHOD_DESC = {
+  '1': 'JoyCaption Alpha Two — 영어 전용. 가장 안정적. 2-pass 정제의 1차 캡션으로도 활용.',
+  '2': 'Qwen3-VL-8B-Instruct — 최신 VL 모델. 영어/중국어 지원. 빠르고 정확.',
+  '3': 'Qwen3.5-9B — 텍스트·비전 통합 모델. 영어/중국어. 상세한 묘사 강점.',
+  '4': '2-pass: JoyCaption으로 1차 캡션 생성 → Qwen3-VL이 Z-Image 전용 프롬프트로 정제.',
+  '5': '2-pass: JoyCaption으로 1차 캡션 생성 → Qwen3.5가 Z-Image 전용 프롬프트로 정제.',
+  '6': 'Huihui-Qwen3-VL abliterated ✦ — 검열 해제 버전. 성인 이미지 포함 모든 콘텐츠 처리.',
+  '7': 'Huihui-Qwen3.5 abliterated ✦ — 검열 해제 버전. 모든 이미지 정확히 묘사.',
+};
+
+// ─── 탭 전환 ────────────────────────────────────────────
+function switchTab(tool) {
+  currentTool = tool;
+  document.querySelectorAll('.tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tool === tool));
+  document.querySelectorAll('.tab-content').forEach(c =>
+    c.classList.toggle('active', c.id === `form-${tool}`));
+
+  const footer = document.getElementById('runFooter');
+  footer.style.display = tool === 'history' ? 'none' : 'flex';
+
+  if (tool === 'history') {
+    loadHistory();
+    document.getElementById('historyViewer').classList.add('hidden');
+  }
+}
+
+// ─── 방식 변경 ──────────────────────────────────────────
+function onMethodChange() {
+  const m = document.getElementById('p-method').value;
+  document.getElementById('method-desc').textContent = METHOD_DESC[m] || '';
+  const langSel = document.getElementById('p-lang');
+  langSel.disabled = (m === '1');
+  if (m === '1') langSel.value = 'en';
+}
+onMethodChange();
+
+// ─── 분류 기준 변경 ─────────────────────────────────────
+function onClassifierByChange() {
+  const by = document.getElementById('c-by').value;
+  document.getElementById('c-style-opts').classList.toggle('hidden', by !== 'style');
+  document.getElementById('c-bg-opts').classList.toggle('hidden', by !== 'background');
+}
+
+// ─── Ollama 옵션 토글 ───────────────────────────────────
+function toggleOllama() {
+  const mode = document.querySelector('[data-group="cl-mode"].selected')?.dataset.val;
+  document.getElementById('ollama-opts').classList.toggle('hidden', mode !== 'ollama');
+}
+
+// ─── 라디오 버튼 ────────────────────────────────────────
+function selectRadio(el) {
+  document.querySelectorAll(`[data-group="${el.dataset.group}"]`)
+    .forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+// ─── 폴더 스캔 ──────────────────────────────────────────
+async function scanFolder(inputId, countId, type) {
+  const folder = document.getElementById(inputId).value.trim();
+  const el = document.getElementById(countId);
+  if (!folder) return;
+  el.textContent = '스캔 중…';
+  el.className = 'count-badge visible';
+  try {
+    const r = await fetch(`/api/scan?folder=${encodeURIComponent(folder)}&type=${type}`);
+    const d = await r.json();
+    if (!d.exists) {
+      el.textContent = '폴더를 찾을 수 없습니다';
+      el.className = 'count-badge visible error';
+    } else {
+      const unit = type === 'heic' ? 'HEIC 파일' : type === 'txt' ? 'txt 파일' : '이미지';
+      el.textContent = `✓ ${d.count}개 ${unit} 발견` + (d.sample ? `  (${d.sample.slice(0,3).join(', ')}${d.count>3?'…':''})` : '');
+      el.className = 'count-badge visible';
+    }
+  } catch {
+    el.textContent = '스캔 실패';
+    el.className = 'count-badge visible error';
+  }
+}
+function clearCount(id) {
+  const el = document.getElementById(id);
+  if (el) el.className = 'count-badge';
+}
+
+// ─── 폼 데이터 수집 ─────────────────────────────────────
+function getFormData() {
+  if (currentTool === 'prompt') {
+    return {
+      tool:         'prompt',
+      input_folder: document.getElementById('p-input').value.trim(),
+      output_dir:   document.getElementById('p-output').value.trim() || null,
+      method:       document.getElementById('p-method').value,
+      quant:        document.getElementById('p-quant').value,
+      lang:         document.getElementById('p-lang').value,
+      accumulate:   document.getElementById('p-accum').checked,
+    };
+  }
+  if (currentTool === 'heic') {
+    return {
+      tool:      'heic',
+      input_dir: document.getElementById('h-input').value.trim(),
+      quality:   parseInt(document.getElementById('h-quality').value),
+      keep:      document.getElementById('h-keep').checked,
+      recursive: document.getElementById('h-recursive').checked,
+      dry_run:   document.getElementById('h-dry').checked,
+    };
+  }
+  if (currentTool === 'classifier') {
+    return {
+      tool:         'classifier',
+      input_dir:    document.getElementById('c-input').value.trim(),
+      output_dir:   document.getElementById('c-output').value.trim() || null,
+      by:           document.getElementById('c-by').value,
+      file_op:      document.querySelector('[data-group="file-op"].selected')?.dataset.val || 'none',
+      model:        document.getElementById('c-model').value,
+      verbose:      document.getElementById('c-verbose').checked,
+      bg_threshold: parseFloat(document.getElementById('c-bg-threshold').value),
+    };
+  }
+  if (currentTool === 'clothing') {
+    const mode = document.querySelector('[data-group="cl-mode"].selected')?.dataset.val || 'spacy';
+    return {
+      tool:         'clothing',
+      mode,
+      input_path:   document.getElementById('cl-input').value.trim(),
+      output_path:  document.getElementById('cl-output').value.trim(),
+      ollama_model: document.getElementById('cl-ollama-model').value.trim(),
+      ollama_batch: parseInt(document.getElementById('cl-batch').value),
+      ollama_url:   document.getElementById('cl-ollama-url').value.trim(),
+    };
+  }
+  return {};
+}
+
+// ─── 실행 ───────────────────────────────────────────────
+async function startRun() {
+  if (isRunning) return;
+  const data = getFormData();
+  clearTerminal();
+  resetProgress();
+  setRunning(true);
+
+  try {
+    const r = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const d = await r.json();
+    if (d.error) {
+      showToast('오류: ' + d.error, 'error');
+      setRunning(false);
+      return;
+    }
+    currentRunId = d.run_id;
+    document.getElementById('outputPath').textContent = d.output_dir;
+    document.getElementById('outputCard').style.display = 'block';
+    connectStream(d.run_id, d.total);
+  } catch(e) {
+    showToast('실행 실패: ' + e.message, 'error');
+    setRunning(false);
+  }
+}
+
+// ─── 중단 ───────────────────────────────────────────────
+async function stopRun() {
+  if (!currentRunId) return;
+  await fetch(`/api/stop/${currentRunId}`, {method: 'POST'});
+  evtSource?.close();
+  setRunning(false);
+  appendLog('\n[중단됨]', 'err');
+  document.getElementById('progText').textContent = '중단됨';
+  document.getElementById('progBar').className = 'progress-bar-fill error';
+  setStatus('error', '중단됨');
+}
+
+// ─── SSE 스트림 ─────────────────────────────────────────
+function connectStream(runId, total) {
+  evtSource = new EventSource(`/api/stream/${runId}`);
+  evtSource.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'log')      handleLog(ev.data);
+    else if (ev.type === 'progress') handleProgress(ev.data, total);
+    else if (ev.type === 'stats')    handleStats(ev.data);
+    else if (ev.type === 'done')     handleDone(ev.data);
+  };
+  evtSource.onerror = () => {
+    if (!isRunning) return;
+    appendLog('[연결 끊김]', 'err');
+  };
+}
+
+// ─── 로그 처리 ──────────────────────────────────────────
+const LOG_COLORS = {
+  '오류': 'err', 'Error': 'err', 'error': 'err',
+  '완료': 'ok',  '저장': 'ok',  'OK': 'ok',
+  'VRAM': 'warn', '경고': 'warn', '주의': 'warn',
+  '===': 'accent', '방식': 'accent',
+};
+function handleLog({text}) {
+  let cls = '';
+  for (const [k,v] of Object.entries(LOG_COLORS)) {
+    if (text.includes(k)) { cls = v; break; }
+  }
+  appendLog(text, cls);
+}
+
+// ─── 진행 처리 ──────────────────────────────────────────
+function handleProgress(d, total) {
+  const cur  = d.current || 0;
+  const tot  = d.total  || total || 1;
+  const pct  = tot > 0 ? Math.round(cur / tot * 100) : 0;
+
+  document.getElementById('progText').textContent = `${pct}%`;
+  document.getElementById('progBar').style.width  = pct + '%';
+  document.getElementById('progCount').textContent = `${cur} / ${tot} 장`;
+
+  if (d.filename) {
+    document.getElementById('currentFile').textContent = '▶ ' + d.filename;
+  }
+  if (d.elapsed_last != null) {
+    document.getElementById('timeLast').textContent = d.elapsed_last.toFixed(1);
+  }
+  if (d.avg_sec != null) {
+    document.getElementById('timeAvg').textContent = d.avg_sec.toFixed(1);
+  }
+  if (d.eta_sec != null) {
+    document.getElementById('timeETA').textContent = Math.ceil(d.eta_sec);
+  }
+}
+
+// ─── 시스템 통계 처리 ───────────────────────────────────
+function handleStats(d) {
+  if (d.gpu_pct != null) {
+    setGauge('gpuBar', 'gpuPct', d.gpu_pct, 100, `${d.gpu_pct}%`);
+  }
+  if (d.vram_used != null && d.vram_total) {
+    const pct = Math.round(d.vram_used / d.vram_total * 100);
+    const label = `${(d.vram_used/1024).toFixed(1)} / ${(d.vram_total/1024).toFixed(1)} GB`;
+    setGauge('vramBar', 'vramVal', pct, 100, label);
+  }
+  if (d.ram_used != null && d.ram_total) {
+    const pct = Math.round(d.ram_used / d.ram_total * 100);
+    const label = `${(d.ram_used/1024).toFixed(1)} / ${(d.ram_total/1024).toFixed(1)} GB`;
+    setGauge('ramBar', 'ramVal', pct, 100, label);
+  }
+}
+
+function setGauge(barId, valId, pct, max, label) {
+  const bar = document.getElementById(barId);
+  bar.style.width = Math.min(pct, 100) + '%';
+  bar.className = 'gauge-fill' + (pct > 90 ? ' crit' : pct > 70 ? ' warn' : '');
+  document.getElementById(valId).textContent = label;
+}
+
+// ─── 완료 처리 ──────────────────────────────────────────
+function handleDone(d) {
+  evtSource?.close();
+  setRunning(false);
+  if (d.success) {
+    const msg = `완료: ${d.completed || '?'}장 처리됨`;
+    document.getElementById('progText').textContent = msg;
+    document.getElementById('progBar').className = 'progress-bar-fill done';
+    document.getElementById('progBar').style.width = '100%';
+    document.getElementById('currentFile').textContent = '';
+    setStatus('idle', '완료');
+    showToast(`✓ ${msg}`, 'success');
+    if (d.output_dir) {
+      document.getElementById('outputPath').textContent = d.output_dir;
+    }
+  } else {
+    const msg = d.error || `오류 (code ${d.returncode})`;
+    document.getElementById('progText').textContent = '오류 발생';
+    document.getElementById('progBar').className = 'progress-bar-fill error';
+    setStatus('error', '오류');
+    showToast(msg, 'error');
+  }
+}
+
+// ─── UI 헬퍼 ────────────────────────────────────────────
+function setRunning(running) {
+  isRunning = running;
+  document.getElementById('btnRun').disabled  = running;
+  document.getElementById('btnStop').disabled = !running;
+  if (running) {
+    document.getElementById('progBar').className = 'progress-bar-fill running';
+    setStatus('running', '실행 중');
+  } else {
+    document.getElementById('progBar').className = 'progress-bar-fill';
+  }
+}
+
+function setStatus(state, label) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot' + (state !== 'idle' ? ` ${state}` : '');
+  document.getElementById('statusLabel').textContent = label;
+}
+
+function resetProgress() {
+  document.getElementById('progText').textContent  = '준비 중…';
+  document.getElementById('progBar').style.width   = '0%';
+  document.getElementById('progCount').textContent = '';
+  document.getElementById('currentFile').textContent = '';
+  document.getElementById('timeLast').textContent  = '—';
+  document.getElementById('timeAvg').textContent   = '—';
+  document.getElementById('timeETA').textContent   = '—';
+}
+
+// ─── 터미널 ─────────────────────────────────────────────
+const CLS_MAP = { ok:'t-ok', err:'t-err', warn:'t-warn', accent:'t-accent', dim:'t-dim' };
+function appendLog(text, cls) {
+  const term = document.getElementById('terminal');
+  const span = document.createElement('span');
+  if (cls && CLS_MAP[cls]) span.className = CLS_MAP[cls];
+  span.textContent = text + '\n';
+  term.appendChild(span);
+  if (autoScroll) term.scrollTop = term.scrollHeight;
+}
+function clearTerminal() {
+  document.getElementById('terminal').innerHTML = '';
+}
+
+// ─── 이력 ───────────────────────────────────────────────
+async function loadHistory() {
+  const list = document.getElementById('historyList');
+  list.innerHTML = '<div style="color:var(--muted);font-size:12px">로딩 중…</div>';
+  try {
+    const r = await fetch('/api/history');
+    const d = await r.json();
+    if (!d.runs.length) {
+      list.innerHTML = '<div style="color:var(--muted);font-size:12px">이력 없음</div>';
+      return;
+    }
+    list.innerHTML = d.runs.map(run => `
+      <div class="history-item" onclick="loadPrompts('${run.name}')">
+        <div class="history-name">${run.name}</div>
+        ${run.has_prompts
+          ? `<span class="history-count">${run.count}개 프롬프트</span>`
+          : `<span class="history-no">결과 없음</span>`}
+      </div>`).join('');
+  } catch {
+    list.innerHTML = '<div style="color:var(--red);font-size:12px">불러오기 실패</div>';
+  }
+}
+
+async function loadPrompts(runName) {
+  const viewer = document.getElementById('historyViewer');
+  const plist  = document.getElementById('promptList');
+  plist.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">로딩 중…</div>';
+  viewer.classList.remove('hidden');
+
+  try {
+    const r = await fetch(`/api/read?path=logs/${runName}/prompts.txt`);
+    const d = await r.json();
+    if (d.error) { plist.innerHTML = `<div style="color:var(--red)">${d.error}</div>`; return; }
+    if (!d.lines.length) { plist.innerHTML = '<div style="color:var(--muted)">내용 없음</div>'; return; }
+
+    const entries = [];
+    let buf = [];
+    for (const ln of d.lines) {
+      if (ln === '' && buf.length) { entries.push(buf.join('\n')); buf = []; }
+      else if (ln) buf.push(ln);
+    }
+    if (buf.length) entries.push(buf.join('\n'));
+
+    plist.innerHTML = entries.map((e,i) =>
+      `<div class="prompt-entry" onclick="copyText(this)">[${i+1}] ${e}</div>`
+    ).join('');
+  } catch {
+    plist.innerHTML = '<div style="color:var(--red)">불러오기 실패</div>';
+  }
+}
+
+async function copyText(el) {
+  const text = el.textContent.replace(/^\[\d+\] /, '');
+  try {
+    await navigator.clipboard.writeText(text);
+    const orig = el.style.background;
+    el.style.background = 'rgba(34,197,94,.15)';
+    setTimeout(() => el.style.background = orig, 600);
+  } catch { showToast('복사 실패 (HTTPS 필요)', 'error'); }
+}
+
+// ─── 토스트 ─────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg, type = '') {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  if (toastTimer) clearTimeout(toastTimer);
+
+  const el = document.createElement('div');
+  el.className = 'toast' + (type ? ` ${type}` : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  toastTimer = setTimeout(() => el.remove(), 3500);
+}
+
+// ─── 초기화 ─────────────────────────────────────────────
+// 시작 시 stats 한 번 불러오기
+(async () => {
+  try {
+    const r = await fetch('/api/scan?folder=image/dataset&type=image');
+    // just warm up
+  } catch {}
+})();
+</script>
+</body>
+</html>

@@ -1,8 +1,6 @@
-# 이미지 데이터셋
-classify_real_photo/
-
-# 생성 결과물
-classify_real_photo_prompts/
+# 가상환경
+venv-prompt/
+venv-classifier/
 
 # 로그
 *.log
