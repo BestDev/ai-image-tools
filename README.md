@@ -11,7 +11,8 @@ AI 이미지 학습 데이터셋 준비를 위한 통합 도구 모음.
 |------|------|------|
 | **prompt_generator_v2** | 이미지→프롬프트 자동 생성 (11가지 방식, 로컬 LLM + Gemini API) | [docs/prompt_generator_v2_guide.md](docs/prompt_generator_v2_guide.md) |
 | **gemini_batch** | Gemini CLI 헤드리스 배치 분석 (API 키 없이 구독 사용) | [docs/gemini_batch_guide.md](docs/gemini_batch_guide.md) |
-| **to_wildcard** | prompts.txt → ComfyUI 와일드카드 형식 변환 | [docs/to_wildcard_guide.md](docs/to_wildcard_guide.md) |
+| **to_wildcard** | prompts.txt → ComfyUI TXT 와일드카드 변환 | [docs/to_wildcard_guide.md](docs/to_wildcard_guide.md) |
+| **txt_to_yaml_wildcard** | TXT 와일드카드 → YAML 변환 (카테고리 병합) | [docs/txt_to_yaml_wildcard_guide.md](docs/txt_to_yaml_wildcard_guide.md) |
 | **image_classifier** | 이미지 자동 분류 (화풍 / 배경 / 인물 수) | [docs/image_classifier_guide.md](docs/image_classifier_guide.md) |
 | **heic_to_jpeg** | iPhone HEIC 이미지 일괄 JPEG 변환 | [docs/heic_to_jpeg_guide.md](docs/heic_to_jpeg_guide.md) |
 | **extract_clothing** | 프롬프트에서 의상 항목 자동 추출 | — |
@@ -98,7 +99,8 @@ image-classifier/
 │   ├── prompt_generator_v2.py   # 프롬프트 생성 (11가지 방식)
 │   ├── gemini_batch.py          # Gemini CLI 헤드리스 배치
 │   ├── shared_prompts.py        # 공유 프롬프트 정의 (두 스크립트가 공통 사용)
-│   ├── to_wildcard.py           # ComfyUI 와일드카드 변환
+│   ├── to_wildcard.py           # ComfyUI TXT 와일드카드 변환
+│   ├── txt_to_yaml_wildcard.py  # TXT → YAML 와일드카드 변환
 │   ├── image_classifier.py      # 이미지 분류
 │   ├── heic_to_jpeg.py          # HEIC 변환
 │   ├── extract_clothing.py      # 의상 추출
@@ -109,6 +111,7 @@ image-classifier/
 │   ├── prompt_generator_v2_guide.md
 │   ├── gemini_batch_guide.md
 │   ├── to_wildcard_guide.md
+│   ├── txt_to_yaml_wildcard_guide.md
 │   ├── image_classifier_guide.md
 │   ├── heic_to_jpeg_guide.md
 │   └── z-image-turbo-prompt-guide.md
