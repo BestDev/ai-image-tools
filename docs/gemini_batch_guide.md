@@ -129,7 +129,7 @@ python3 scripts/gemini_batch.py ./photos --dry-run
 | `--dry-run` | off | 실제 실행 없이 처리 목록만 출력 |
 | `--collect-file` | `prompts.txt` | 누적 프롬프트 파일명. `""` 로 비활성화 |
 | `--no-session` | off | 세션 없이 매 이미지마다 전체 프롬프트 전달 |
-| `--reset-every` | `25` | 세션 모드: N장마다 세션 리셋 (0=리셋 없음) |
+| `--reset-every` | `100` | 세션 모드: N장마다 세션 리셋 (0=리셋 없음) |
 
 ---
 
@@ -218,7 +218,7 @@ photos/photo003.err    ← 에러 메시지
 ### 세션 리셋 주기 조정
 
 ```bash
-# 기본 (25장마다 리셋)
+# 기본 (100장마다 리셋)
 python3 scripts/gemini_batch.py ./photos
 
 # 50장마다 리셋 (컨텍스트를 오래 유지)
