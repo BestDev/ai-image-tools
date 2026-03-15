@@ -202,8 +202,8 @@ def main():
                         help="누적 프롬프트 파일명 (기본: prompts.txt). 빈 문자열로 비활성화")
     parser.add_argument("--no-session", action="store_true",
                         help="세션 없이 매 이미지마다 전체 프롬프트 전달 (기존 방식)")
-    parser.add_argument("--reset-every", type=int, default=25,
-                        help="세션 모드: N장마다 세션 리셋 (기본: 25, 0=리셋 없음)")
+    parser.add_argument("--reset-every", type=int, default=100,
+                        help="세션 모드: N장마다 세션 리셋 (기본: 100, 0=리셋 없음)")
     args = parser.parse_args()
 
     # 입력 폴더 확인
