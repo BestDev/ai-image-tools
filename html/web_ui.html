@@ -310,12 +310,10 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
   transition: opacity .15s; font-weight: 400;
 }
 .tip:hover::after { opacity: 1; }
-/* 왼쪽 패널 툴팁: 오른쪽으로 펼침 */
-.panel-left .tip::after { left: 0; transform: none; }
 /* 상단 요소 툴팁: 아래로 펼침 */
 .tip.tip-down::after { bottom: auto; top: calc(100% + 6px); }
-/* 오른쪽 끝 툴팁: 왼쪽으로 펼침 (패널 경계 초과 방지) */
-.tip.tip-left::after { left: auto; right: 0; transform: none; }
+/* 왼쪽 패널 툴팁: JS 고정 위치 방식으로 대체 (overflow 경계 짤림 방지) */
+.panel-left .tip::after { display: none; }
 
 /* ── 숨기기 ── */
 .hidden { display: none !important; }
@@ -550,12 +548,12 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div class="checkbox-row">
           <input type="checkbox" id="p-accum">
           <label for="p-accum">이어서 실행 (--accumulate)</label>
-          <span class="tip tip-left" data-tip="이미 생성된 항목은 건너뛰고 나머지만 처리&#10;중단된 작업을 재개하거나, 이미지 추가 후 나머지만 처리할 때">?</span>
+          <span class="tip" data-tip="이미 생성된 항목은 건너뛰고 나머지만 처리&#10;중단된 작업을 재개하거나, 이미지 추가 후 나머지만 처리할 때">?</span>
         </div>
         <div class="checkbox-row" id="uncensored-row">
           <input type="checkbox" id="p-uncensored">
           <label for="p-uncensored">검열 없음 (--uncensored)</label>
-          <span class="tip tip-left" data-tip="모델에 비검열 시스템 프롬프트를 추가하여 묘사 거부나 순화 없이 시각 콘텐츠를 있는 그대로 출력&#10;AI 훈련 데이터 생성용">?</span>
+          <span class="tip" data-tip="모델에 비검열 시스템 프롬프트를 추가하여 묘사 거부나 순화 없이 시각 콘텐츠를 있는 그대로 출력&#10;AI 훈련 데이터 생성용">?</span>
         </div>
       </div>
 
@@ -589,17 +587,17 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div class="checkbox-row">
           <input type="checkbox" id="h-keep">
           <label for="h-keep">원본 HEIC 파일 유지 (기본: 삭제)</label>
-          <span class="tip tip-left" data-tip="체크 해제 시 변환 후 원본 HEIC 삭제&#10;체크 시 HEIC + JPEG 둘 다 보존">?</span>
+          <span class="tip" data-tip="체크 해제 시 변환 후 원본 HEIC 삭제&#10;체크 시 HEIC + JPEG 둘 다 보존">?</span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="h-recursive">
           <label for="h-recursive">하위 폴더 재귀 처리</label>
-          <span class="tip tip-left" data-tip="체크 시 지정 폴더의 모든 하위 폴더까지 탐색">?</span>
+          <span class="tip" data-tip="체크 시 지정 폴더의 모든 하위 폴더까지 탐색">?</span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="h-dry" onchange="onDryRunChange()">
           <label for="h-dry">드라이런 (실제 변환 없이 목록만)</label>
-          <span class="tip tip-left" data-tip="실제로 파일을 변환하지 않고&#10;처리될 파일 목록과 수만 출력">?</span>
+          <span class="tip" data-tip="실제로 파일을 변환하지 않고&#10;처리될 파일 목록과 수만 출력">?</span>
         </div>
       </div>
 
@@ -656,7 +654,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           <div class="checkbox-row">
             <input type="checkbox" id="c-verbose">
             <label for="c-verbose">세부 점수 출력 (--verbose)</label>
-            <span class="tip tip-left" data-tip="각 이미지의 카테고리별 확률 점수를 출력">?</span>
+            <span class="tip" data-tip="각 이미지의 카테고리별 확률 점수를 출력">?</span>
           </div>
         </div>
 
@@ -767,10 +765,10 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div class="form-row">
           <div class="form-label">
             출력 폴더
-            <span class="tip" data-tip="비워두면 이미지와 같은 폴더에 저장&#10;별도 폴더 지정 시 해당 폴더에만 저장">?</span>
+            <span class="tip" data-tip="비워두면 output/날짜-gemini 으로 자동 생성&#10;이전 작업 이어서 실행 시 해당 폴더 경로 입력">?</span>
           </div>
           <div class="folder-row">
-            <input type="text" id="gb-output" placeholder="이미지 옆 (기본)">
+            <input type="text" id="gb-output" placeholder="자동 생성 (output/날짜-gemini)">
             <button class="browse-btn" onclick="openFolderBrowser('gb-output')" title="폴더 탐색">📁</button>
           </div>
         </div>
@@ -849,17 +847,17 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div class="checkbox-row">
           <input type="checkbox" id="gb-skip">
           <label for="gb-skip">이어서 실행 (--skip-existing)</label>
-          <span class="tip tip-left" data-tip="이미 txt 파일이 존재하면 건너뜀&#10;중단된 작업 재개 시 사용">?</span>
+          <span class="tip" data-tip="이미 txt 파일이 존재하면 건너뜀&#10;중단된 작업 재개 시 사용">?</span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="gb-no-session">
           <label for="gb-no-session">세션 없이 실행 (--no-session)</label>
-          <span class="tip tip-left" data-tip="매 이미지마다 전체 프롬프트 전달&#10;세션 모드보다 토큰 소모 많음">?</span>
+          <span class="tip" data-tip="매 이미지마다 전체 프롬프트 전달&#10;세션 모드보다 토큰 소모 많음">?</span>
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="gb-dry" onchange="onGbDryRunChange()">
           <label for="gb-dry">드라이런 (처리 목록만 출력)</label>
-          <span class="tip tip-left" data-tip="실제 API 호출 없이 처리 대상 목록만 출력">?</span>
+          <span class="tip" data-tip="실제 API 호출 없이 처리 대상 목록만 출력">?</span>
         </div>
       </div>
 
@@ -1903,6 +1901,44 @@ setInterval(async () => {
     showToast('큐 작업 자동 연결 #' + running.id, 'success');
   } catch {}
 }, 2000);
+
+// ─── 패널 내 툴팁 (viewport 고정, 경계 짤림 방지) ──────────────
+(function() {
+  const el = document.createElement('div');
+  el.style.cssText = [
+    'position:fixed', 'z-index:300', 'display:none',
+    'background:#1e1e3a', 'color:#e2e8f0',
+    'border:1px solid #2a2a45', 'border-radius:6px',
+    'padding:7px 10px', 'font-size:11.5px', 'line-height:1.5',
+    'white-space:pre-wrap', 'max-width:260px', 'pointer-events:none',
+    'box-shadow:0 4px 12px rgba(0,0,0,.5)',
+  ].join(';');
+  document.body.appendChild(el);
+
+  function place(tip) {
+    const text = tip.getAttribute('data-tip');
+    if (!text) return;
+    el.textContent = text;
+    el.style.display = 'block';
+    const r  = tip.getBoundingClientRect();
+    const tw = el.offsetWidth, th = el.offsetHeight, m = 6;
+    const forceDown = tip.classList.contains('tip-down');
+    let top  = forceDown ? r.bottom + m : r.top - th - m;
+    if (!forceDown && top < 8) top = r.bottom + m;
+    let left = r.left + r.width / 2 - tw / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    el.style.top  = top  + 'px';
+    el.style.left = left + 'px';
+  }
+
+  document.addEventListener('mouseover', e => {
+    const tip = e.target.closest?.('.tip');
+    if (tip && tip.closest('.panel-left')) place(tip);
+  });
+  document.addEventListener('mouseout', e => {
+    if (e.target.closest?.('.tip')) el.style.display = 'none';
+  });
+})();
 
 // ─── 초기화 ─────────────────────────────────────────────
 // 시작 시 stats 한 번 불러오기

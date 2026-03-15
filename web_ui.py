@@ -248,13 +248,13 @@ def build_cmd(tool: str, params: dict):
         GEMINI_BATCH_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"}
 
         output_dir = (params.get("output_dir") or "").strip()
+        if not output_dir:
+            ts = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+            output_dir = f"output/{ts}-gemini"
         cmd = [
             VENV_PY, "-u", str(BASE_DIR / "scripts" / "gemini_batch.py"), str(path),
+            "-o", output_dir,
         ]
-        if output_dir:
-            cmd += ["-o", output_dir]
-        else:
-            output_dir = str(path)  # 기본: 이미지 옆
 
         cmd += [
             "--lang",         params.get("lang", "en"),
