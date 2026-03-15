@@ -426,8 +426,9 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
   <div class="tab active" data-tool="prompt"     onclick="switchTab('prompt')">🎯 프롬프트 생성</div>
   <div class="tab"        data-tool="heic"       onclick="switchTab('heic')">🔄 HEIC 변환</div>
   <div class="tab"        data-tool="classifier" onclick="switchTab('classifier')">📂 이미지 분류</div>
-  <div class="tab"        data-tool="clothing"   onclick="switchTab('clothing')">👗 의상 추출</div>
-  <div class="tab"        data-tool="queue"      onclick="switchTab('queue')">⏱ 배치 큐</div>
+  <div class="tab"        data-tool="clothing"     onclick="switchTab('clothing')">👗 의상 추출</div>
+  <div class="tab"        data-tool="gemini_batch" onclick="switchTab('gemini_batch')">☁ Gemini Batch</div>
+  <div class="tab"        data-tool="queue"        onclick="switchTab('queue')">⏱ 배치 큐</div>
   <div class="tab"        data-tool="history"    onclick="switchTab('history')">📋 실행 이력</div>
 </div>
 
@@ -741,6 +742,122 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
             </div>
             <input type="text" id="cl-ollama-url" value="http://host.docker.internal:11434">
           </div>
+        </div>
+      </div>
+
+      <!-- ══ Gemini Batch ══ -->
+      <div id="form-gemini_batch" class="tab-content">
+        <div class="section-title">입력</div>
+
+        <div class="form-row">
+          <div class="form-label">
+            입력 폴더
+            <span class="tip tip-down" data-tip="분석할 이미지 폴더&#10;Gemini CLI가 이미지를 직접 처리합니다&#10;지원 포맷: JPG/PNG/WEBP/BMP/TIFF">?</span>
+          </div>
+          <div class="folder-row">
+            <input type="text" id="gb-input" value="image/dataset" oninput="clearCount('gb-count')">
+            <button class="browse-btn" onclick="openFolderBrowser('gb-input')" title="폴더 탐색">📁</button>
+            <button class="scan-btn" onclick="scanFolder('gb-input','gb-count','image')">스캔</button>
+          </div>
+          <div id="gb-count" class="count-badge"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-label">
+            출력 폴더
+            <span class="tip" data-tip="비워두면 이미지와 같은 폴더에 저장&#10;별도 폴더 지정 시 해당 폴더에만 저장">?</span>
+          </div>
+          <div class="folder-row">
+            <input type="text" id="gb-output" placeholder="이미지 옆 (기본)">
+            <button class="browse-btn" onclick="openFolderBrowser('gb-output')" title="폴더 탐색">📁</button>
+          </div>
+        </div>
+
+        <div class="section-title">모델 / 언어</div>
+
+        <div class="form-row">
+          <div class="form-label">
+            Gemini 모델
+            <span class="tip" data-tip="flash: 빠름 + 높은 품질 (기본 권장)&#10;flash-lite: 매우 빠름, 쿼터 절약&#10;pro: 최고 품질, 느림&#10;auto: CLI 자동 선택">?</span>
+          </div>
+          <div class="radio-group">
+            <div class="radio-btn selected" data-group="gb-model" data-val="flash" onclick="selectRadio(this)">flash</div>
+            <div class="radio-btn" data-group="gb-model" data-val="flash-lite" onclick="selectRadio(this)">flash-lite</div>
+            <div class="radio-btn" data-group="gb-model" data-val="pro" onclick="selectRadio(this)">pro</div>
+            <div class="radio-btn" data-group="gb-model" data-val="auto" onclick="selectRadio(this)">auto</div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-label">출력 언어</div>
+          <select id="gb-lang">
+            <option value="en" selected>English (영어)</option>
+            <option value="zh">中文 (중국어)</option>
+          </select>
+        </div>
+
+        <div class="section-title">출력 설정</div>
+
+        <div class="form-row">
+          <div class="form-label">
+            출력 모드
+            <span class="tip" data-tip="both: 개별 txt + 누적 파일 (기본)&#10;individual: 개별 txt만 (학습 데이터셋, image.jpg→image.txt)&#10;collect: 누적 파일만 (ComfyUI 와일드카드용)">?</span>
+          </div>
+          <div class="radio-group">
+            <div class="radio-btn selected" data-group="gb-outmode" data-val="both" onclick="selectRadio(this)">both</div>
+            <div class="radio-btn" data-group="gb-outmode" data-val="individual" onclick="selectRadio(this)">individual</div>
+            <div class="radio-btn" data-group="gb-outmode" data-val="collect" onclick="selectRadio(this)">collect</div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-label">
+            누적 파일명
+            <span class="tip" data-tip="누적 프롬프트를 저장할 파일명&#10;기본: prompts.txt (한 줄 = 한 프롬프트)&#10;비워두면 누적 파일 생성 안 함">?</span>
+          </div>
+          <input type="text" id="gb-collect-file" value="prompts.txt">
+        </div>
+
+        <div class="section-title">고급 옵션</div>
+
+        <div class="form-row">
+          <div class="form-label">
+            이미지 간 대기 (초)
+            <span class="tip" data-tip="API 호출 간 대기 시간&#10;3초: 일 ~1,000장&#10;5~8초: 일 ~600장&#10;10~15초: 안정적 ~300장">?</span>
+          </div>
+          <input type="number" id="gb-delay" value="3.0" min="0" step="0.5">
+        </div>
+
+        <div class="form-row">
+          <div class="form-label">
+            타임아웃 (초)
+            <span class="tip" data-tip="이미지당 최대 응답 대기 시간&#10;응답이 느리면 180으로 늘려보세요">?</span>
+          </div>
+          <input type="number" id="gb-timeout" value="120" min="30">
+        </div>
+
+        <div class="form-row">
+          <div class="form-label">
+            세션 리셋 주기 (장)
+            <span class="tip" data-tip="N장마다 워밍업 세션 리셋&#10;0: 리셋 없음 (컨텍스트 무제한 누적)&#10;100: 기본값 (1M 컨텍스트 기준 안전)">?</span>
+          </div>
+          <input type="number" id="gb-reset-every" value="100" min="0">
+        </div>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="gb-skip">
+          <label for="gb-skip">이어서 실행 (--skip-existing)</label>
+          <span class="tip" data-tip="이미 txt 파일이 존재하면 건너뜀&#10;중단된 작업 재개 시 사용">?</span>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="gb-no-session">
+          <label for="gb-no-session">세션 없이 실행 (--no-session)</label>
+          <span class="tip" data-tip="매 이미지마다 전체 프롬프트 전달&#10;세션 모드보다 토큰 소모 많음">?</span>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="gb-dry">
+          <label for="gb-dry">드라이런 (처리 목록만 출력)</label>
+          <span class="tip" data-tip="실제 API 호출 없이 처리 대상 목록만 출력">?</span>
         </div>
       </div>
 
@@ -1163,6 +1280,23 @@ function getFormData() {
       ollama_url:   document.getElementById('cl-ollama-url').value.trim(),
     };
   }
+  if (currentTool === 'gemini_batch') {
+    return {
+      tool:         'gemini_batch',
+      input_dir:    document.getElementById('gb-input').value.trim(),
+      output_dir:   document.getElementById('gb-output').value.trim() || null,
+      lang:         document.getElementById('gb-lang').value,
+      model:        document.querySelector('[data-group="gb-model"].selected')?.dataset.val || 'flash',
+      output_mode:  document.querySelector('[data-group="gb-outmode"].selected')?.dataset.val || 'both',
+      collect_file: document.getElementById('gb-collect-file').value.trim(),
+      delay:        parseFloat(document.getElementById('gb-delay').value),
+      timeout:      parseInt(document.getElementById('gb-timeout').value),
+      reset_every:  parseInt(document.getElementById('gb-reset-every').value),
+      skip_existing: document.getElementById('gb-skip').checked,
+      no_session:   document.getElementById('gb-no-session').checked,
+      dry_run:      document.getElementById('gb-dry').checked,
+    };
+  }
   return {};
 }
 
@@ -1228,10 +1362,10 @@ function connectStream(runId, total) {
 
 // ─── 로그 처리 ──────────────────────────────────────────
 const LOG_COLORS = {
-  '오류': 'err', 'Error': 'err', 'error': 'err',
+  '오류': 'err', 'Error': 'err', 'error': 'err', 'FAIL': 'err',
   '완료': 'ok',  '저장': 'ok',  'OK': 'ok',
-  'VRAM': 'warn', '경고': 'warn', '주의': 'warn',
-  '===': 'accent', '방식': 'accent',
+  'VRAM': 'warn', '경고': 'warn', '주의': 'warn', 'SKIP': 'warn',
+  '===': 'accent', '방식': 'accent', 'WARMUP': 'accent',
 };
 function handleLog({text}) {
   let cls = '';
@@ -1306,7 +1440,7 @@ function handleDone(d) {
       document.getElementById('outputPath').textContent = d.output_dir;
     }
     // 프롬프트 생성 완료 후 inline 뷰어 자동 표시
-    if (currentTool === 'prompt' && d.output_dir) {
+    if ((currentTool === 'prompt' || currentTool === 'gemini_batch') && d.output_dir) {
       showInlineResult(d.output_dir);
     }
     // 큐 목록 갱신
@@ -1722,6 +1856,12 @@ function describeRun(params) {
   if (t === 'heic')       return `HEIC 변환 | 품질 ${params.quality || 95}`;
   if (t === 'classifier') return `이미지 분류 | ${params.by || 'style'}`;
   if (t === 'clothing')   return `의상 추출 | ${params.mode || 'spacy'}`;
+  if (t === 'gemini_batch') {
+    const parts = [params.model || 'flash', params.lang || 'en'];
+    if (params.output_mode && params.output_mode !== 'both') parts.push(params.output_mode);
+    if (params.input_dir) parts.push(params.input_dir);
+    return 'Gemini Batch | ' + parts.join(' · ');
+  }
   return t;
 }
 function showRunInfo(params) {

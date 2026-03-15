@@ -242,6 +242,39 @@ def build_cmd(tool: str, params: dict):
             cmd += ["--ollama-url", params.get("ollama_url", "http://host.docker.internal:11434")]
         return cmd, 0, out
 
+    elif tool == "gemini_batch":
+        folder = params.get("input_dir", "image/dataset")
+        path = (BASE_DIR / folder).resolve()
+        GEMINI_BATCH_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"}
+
+        output_dir = (params.get("output_dir") or "").strip()
+        cmd = [
+            VENV_PY, "-u", str(BASE_DIR / "scripts" / "gemini_batch.py"), str(path),
+        ]
+        if output_dir:
+            cmd += ["-o", output_dir]
+        else:
+            output_dir = str(path)  # 기본: 이미지 옆
+
+        cmd += [
+            "--lang",         params.get("lang", "en"),
+            "-m",             params.get("model", "flash"),
+            "--delay",        str(params.get("delay", 3.0)),
+            "--timeout",      str(params.get("timeout", 120)),
+            "--output-mode",  params.get("output_mode", "both"),
+            "--reset-every",  str(params.get("reset_every", 100)),
+        ]
+        collect_file = params.get("collect_file", "prompts.txt")
+        if collect_file is not None:
+            cmd += ["--collect-file", str(collect_file)]
+        if params.get("skip_existing"): cmd.append("--skip-existing")
+        if params.get("no_session"):    cmd.append("--no-session")
+        if params.get("dry_run"):       cmd.append("--dry-run")
+
+        imgs = (len([p for p in path.iterdir() if p.suffix.lower() in GEMINI_BATCH_EXT])
+                if path.is_dir() else 1)
+        return cmd, imgs, output_dir
+
     raise ValueError(f"알 수 없는 tool: {tool}")
 
 
@@ -255,6 +288,7 @@ RE_IMG_DONE_NOWD  = re.compile(r"^\s+완료\s+\(([0-9.]+)초\)\s*$")   # Pass 1:
 RE_HEIC_DONE  = re.compile(r"[✓→]\s|변환\s+완료|저장")
 RE_CLASS_DONE = re.compile(r"→\s+\w+|분류\s+완료")
 RE_HF_DOWN    = re.compile(r'(\d+)%\|')
+RE_GEMINI_DONE = re.compile(r"^\[\s*(\d+)/(\d+)\]\s+(OK|FAIL|SKIP)\s+(\S+)")
 
 
 def run_process(run_id: str, cmd: list, total: int):
@@ -280,9 +314,13 @@ def run_process(run_id: str, cmd: list, total: int):
 
         generic_done = 0  # 상세 파싱 불가 도구용 카운터
         pass_offset  = 0  # 2-pass 방식: Pass 2 시작 시 Pass 1 완료 수 보정
+        _gem_prev_time = [time.time()]  # gemini_batch: 이전 이미지 완료 시각
 
         for line in proc.stdout:
             line = line.rstrip()
+            # \r 인플레이스 덮어쓰기 처리 (gemini_batch 등)
+            if '\r' in line:
+                line = line.rsplit('\r', 1)[-1]
             emit("log", {"text": line})
 
             # 프롬프트 생성: [N/M] filename
@@ -337,6 +375,30 @@ def run_process(run_id: str, cmd: list, total: int):
             if m3 and any(k in line for k in ('Fetching', 'Downloading', '.safetensors', '.bin', '.json', 'model')):
                 pct = int(m3.group(1))
                 emit("download", {"pct": pct, "label": line.strip()[:100]})
+
+            # gemini_batch 진행 파싱
+            mg = RE_GEMINI_DONE.match(line)
+            if mg and state.get("tool") == "gemini_batch":
+                cur = int(mg.group(1))
+                tot_line = int(mg.group(2))
+                status = mg.group(3)
+                fname = mg.group(4)
+                state["current_file"] = fname
+                if status in ("OK", "FAIL"):
+                    now = time.time()
+                    elapsed = now - _gem_prev_time[0]
+                    _gem_prev_time[0] = now
+                    generic_done += 1
+                    eff_total = total or tot_line
+                    avg = (now - state["started_at"]) / generic_done
+                    emit("progress", {
+                        "current": cur, "total": eff_total, "filename": fname,
+                        "elapsed_last": round(elapsed, 1), "avg_sec": round(avg, 1),
+                        "eta_sec": max(0, (eff_total - cur) * avg),
+                    })
+                elif status == "SKIP":
+                    emit("progress", {"current": cur, "total": total or tot_line, "filename": fname})
+                continue
 
             # 기타 도구: 단순 카운팅
             if RE_HEIC_DONE.search(line) or RE_CLASS_DONE.search(line):
