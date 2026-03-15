@@ -127,7 +127,8 @@ python3 scripts/gemini_batch.py ./photos --dry-run
 | `--timeout` | `120` | 이미지당 최대 대기 시간(초) |
 | `--skip-existing` | off | 이미 `.txt`가 존재하면 건너뜀 |
 | `--dry-run` | off | 실제 실행 없이 처리 목록만 출력 |
-| `--collect-file` | `prompts.txt` | 누적 프롬프트 파일명. `""` 로 비활성화 |
+| `--output-mode` | `both` | 출력 모드: `both`=개별+누적 / `individual`=개별만 / `collect`=누적만 |
+| `--collect-file` | `prompts.txt` | 누적 프롬프트 파일명 |
 | `--no-session` | off | 세션 없이 매 이미지마다 전체 프롬프트 전달 |
 | `--reset-every` | `100` | 세션 모드: N장마다 세션 리셋 (0=리셋 없음) |
 
@@ -302,6 +303,22 @@ python3 scripts/gemini_batch.py ./photos --collect-file ""
 
 ```bash
 python3 scripts/gemini_batch.py ./photos -o ./prompts_zh --lang zh --model flash
+```
+
+### 출력 모드 선택
+
+```bash
+# 기본: 개별 txt + 누적 prompts.txt 모두 저장
+python3 scripts/gemini_batch.py ./photos -o ./out
+
+# 학습 데이터셋용: 개별 txt 파일만 저장 (image.jpg → image.txt)
+python3 scripts/gemini_batch.py ./photos -o ./out --output-mode individual
+
+# 와일드카드용: 누적 prompts.txt만 저장
+python3 scripts/gemini_batch.py ./photos -o ./out --output-mode collect
+
+# 누적 파일명 변경
+python3 scripts/gemini_batch.py ./photos -o ./out --output-mode collect --collect-file dataset.txt
 ```
 
 ### 세션 모드 조정

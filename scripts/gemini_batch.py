@@ -198,8 +198,11 @@ def main():
                         help="이미 txt 파일이 존재하면 건너뜀")
     parser.add_argument("--dry-run", action="store_true",
                         help="실제 실행 없이 처리 목록만 출력")
+    parser.add_argument("--output-mode", choices=["both", "individual", "collect"],
+                        default="both",
+                        help="출력 모드: both=개별+누적(기본) / individual=개별만 / collect=누적만")
     parser.add_argument("--collect-file", type=str, default="prompts.txt",
-                        help="누적 프롬프트 파일명 (기본: prompts.txt). 빈 문자열로 비활성화")
+                        help="누적 프롬프트 파일명 (기본: prompts.txt)")
     parser.add_argument("--no-session", action="store_true",
                         help="세션 없이 매 이미지마다 전체 프롬프트 전달 (기존 방식)")
     parser.add_argument("--reset-every", type=int, default=100,
@@ -234,9 +237,13 @@ def main():
     failed = 0
     session_active = False  # 워밍업 성공 여부 추적
 
+    # 출력 모드 플래그
+    write_individual = args.output_mode in ("both", "individual")
+    write_collect = args.output_mode in ("both", "collect")
+
     # 누적 파일 경로 결정
     collect_path: Path | None = None
-    if args.collect_file:
+    if write_collect and args.collect_file:
         collect_base = args.output_dir if args.output_dir else args.input_dir
         collect_path = collect_base / args.collect_file
 
@@ -246,6 +253,7 @@ def main():
     print(f"Gemini CLI 배치 시작")
     print(f"  입력폴더 : {args.input_dir.resolve()}")
     print(f"  출력폴더 : {args.output_dir.resolve() if args.output_dir else '(이미지 옆)'}")
+    print(f"  출력모드 : {args.output_mode} ({'개별+누적' if args.output_mode == 'both' else ('개별만' if args.output_mode == 'individual' else '누적만')})")
     print(f"  누적파일 : {collect_path.resolve() if collect_path else '(비활성화)'}")
     print(f"  모델     : {args.model} ({model})")
     print(f"  언어     : {args.lang}")
@@ -270,8 +278,8 @@ def main():
         out_txt = output_path_for(image, args.output_dir)
         prefix = f"[{idx:3d}/{total}]"
 
-        # skip-existing
-        if args.skip_existing and out_txt.exists() and out_txt.stat().st_size > 0:
+        # skip-existing (개별 파일 저장 모드에서만 유효)
+        if args.skip_existing and write_individual and out_txt.exists() and out_txt.stat().st_size > 0:
             print(f"{prefix} SKIP  {image.name}")
             skipped += 1
             continue
@@ -300,7 +308,8 @@ def main():
             ok, text = run_gemini_full(image, model, args.lang, args.timeout)
 
         if ok:
-            out_txt.write_text(text, encoding="utf-8")
+            if write_individual:
+                out_txt.write_text(text, encoding="utf-8")
             # 누적 파일에 추가: 줄바꿈 압축 → 한 줄 = 한 프롬프트
             if collect_path:
                 single_line = " ".join(text.split())
