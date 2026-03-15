@@ -1,6 +1,6 @@
 # gemini_batch.py 사용 가이드
 
-> 최종 업데이트: 2026-03-15
+> 최종 업데이트: 2026-03-16
 > 환경: WSL2 / Ubuntu-24.04 / Python 3.12
 > 요구사항: Gemini CLI 설치 + Google 계정 로그인 (API 키 불필요)
 
@@ -10,14 +10,15 @@
 
 1. [개요](#1-개요)
 2. [사전 요구사항](#2-사전-요구사항)
-3. [실행 방법](#3-실행-방법)
-4. [옵션 상세](#4-옵션-상세)
-5. [출력 파일 구조](#5-출력-파일-구조)
-6. [세션 모드 (Session Warmup Chain)](#6-세션-모드-session-warmup-chain)
-7. [모델 선택 기준](#7-모델-선택-기준)
-8. [쿼터 및 속도 설정](#8-쿼터-및-속도-설정)
-9. [실 사용 예제](#9-실-사용-예제)
-10. [트러블슈팅](#10-트러블슈팅)
+3. [Web UI 사용법](#3-web-ui-사용법)
+4. [실행 방법 (CLI)](#4-실행-방법-cli)
+5. [옵션 상세](#5-옵션-상세)
+6. [출력 파일 구조](#6-출력-파일-구조)
+7. [세션 모드 (Session Warmup Chain)](#7-세션-모드-session-warmup-chain)
+8. [모델 선택 기준](#8-모델-선택-기준)
+9. [쿼터 및 속도 설정](#9-쿼터-및-속도-설정)
+10. [실 사용 예제](#10-실-사용-예제)
+11. [트러블슈팅](#11-트러블슈팅)
 
 ---
 
@@ -77,7 +78,40 @@ gemini
 
 ---
 
-## 3. 실행 방법
+## 3. Web UI 사용법
+
+```bash
+python3 web_ui.py
+# → http://localhost:7860
+```
+
+**☁ Gemini Batch** 탭을 선택하면 아래 옵션을 GUI로 설정하고 실행할 수 있다.
+
+| UI 항목 | 설명 |
+|---------|------|
+| 입력 폴더 | 이미지가 있는 폴더 (📁 탐색기 또는 직접 입력) |
+| 출력 폴더 | 비워두면 이미지 옆에 저장 |
+| Gemini 모델 | flash / flash-lite / pro / auto |
+| 출력 언어 | 영어(en) / 중국어(zh) |
+| 출력 모드 | both / individual / collect |
+| 누적 파일명 | 기본 `prompts.txt` |
+| 이미지 간 대기 | 초 단위 (기본 3초) |
+| 타임아웃 | 초 단위 (기본 120초) |
+| 세션 리셋 주기 | N장마다 리셋 (기본 100) |
+| 이어서 실행 | --skip-existing |
+| 세션 없이 실행 | --no-session |
+| 드라이런 | 처리 목록만 출력 |
+
+**Web UI 주요 기능:**
+- 실시간 터미널 출력 (`OK` 녹색 / `FAIL` 적색 / `[WARMUP]` 강조)
+- 이미지별 처리 진행률 및 ETA 표시
+- 이미지 썸네일 미리보기 + 완료 체크 오버레이
+- 완료 후 `prompts.txt` 내용 자동 inline 표시 (클릭하여 복사)
+- **배치 큐**에 추가하여 다른 작업과 순차 처리 가능
+
+---
+
+## 4. 실행 방법 (CLI)
 
 ```bash
 python3 scripts/gemini_batch.py <입력폴더> [옵션]
@@ -115,7 +149,7 @@ python3 scripts/gemini_batch.py ./photos --dry-run
 
 ---
 
-## 4. 옵션 상세
+## 5. 옵션 상세
 
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
@@ -134,7 +168,7 @@ python3 scripts/gemini_batch.py ./photos --dry-run
 
 ---
 
-## 5. 출력 파일 구조
+## 6. 출력 파일 구조
 
 ### 개별 txt 파일
 
@@ -195,7 +229,7 @@ photos/photo003.err    ← 에러 메시지
 
 ---
 
-## 6. 세션 모드 (Session Warmup Chain)
+## 7. 세션 모드 (Session Warmup Chain)
 
 기본 동작(세션 모드)에서는 Gemini CLI의 `-r "latest"` 세션 재개 기능을 활용해 토큰을 절약하고 컨텍스트를 누적합니다.
 
@@ -239,7 +273,7 @@ python3 scripts/gemini_batch.py ./photos --no-session
 
 ---
 
-## 7. 모델 선택 기준
+## 8. 모델 선택 기준
 
 | 별칭 | 실제 모델 | 속도 | 품질 | 권장 용도 |
 |------|----------|------|------|----------|
@@ -252,7 +286,7 @@ python3 scripts/gemini_batch.py ./photos --no-session
 
 ---
 
-## 8. 쿼터 및 속도 설정
+## 9. 쿼터 및 속도 설정
 
 ### Google AI Pro 구독 쿼터
 
@@ -275,7 +309,7 @@ Gemini CLI는 **Gemini Code Assist** 쿼터 기준을 적용한다.
 
 ---
 
-## 9. 실 사용 예제
+## 10. 실 사용 예제
 
 ### 1,000장 폴더 배치 처리 (재개 포함)
 
@@ -333,7 +367,7 @@ python3 scripts/gemini_batch.py ./photos --no-session
 
 ---
 
-## 10. 트러블슈팅
+## 11. 트러블슈팅
 
 ### `gemini CLI not found` 오류
 
