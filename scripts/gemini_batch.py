@@ -167,7 +167,7 @@ def collect_images(input_dir: Path) -> list[Path]:
     for ext in IMAGE_EXTENSIONS:
         images.extend(input_dir.glob(f"*{ext}"))
         images.extend(input_dir.glob(f"*{ext.upper()}"))
-    return sorted(set(images))
+    return sorted(set(images), key=lambda p: p.name)
 
 
 def output_path_for(image: Path, output_dir: Path | None) -> Path:
