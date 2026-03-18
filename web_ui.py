@@ -50,19 +50,18 @@ def _queue_worker():
     """배치 큐 순차 처리 스레드"""
     while True:
         job = None
-        # 직접 실행(/api/run) 포함, 현재 실행 중인 작업이 있으면 대기
+        # 단일 락 스코프로 TOCTOU 경합 방지
         with runs_lock:
             any_active = any(not r["finished"] for r in runs.values())
-        if not any_active:
-            with queue_lock:
-                # 큐 내에서도 이미 running인 항목이 없을 때만 새 작업 시작
-                queue_busy = any(j["status"] == "running" for j in job_queue)
-                if not queue_busy:
-                    for j in job_queue:
-                        if j["status"] == "pending":
-                            j["status"] = "running"
-                            job = j
-                            break
+            if not any_active:
+                with queue_lock:
+                    queue_busy = any(j["status"] == "running" for j in job_queue)
+                    if not queue_busy:
+                        for j in job_queue:
+                            if j["status"] == "pending":
+                                j["status"] = "running"
+                                job = j
+                                break
         if job is None:
             time.sleep(1)
             continue
@@ -185,6 +184,12 @@ def build_cmd(tool: str, params: dict):
             cmd.append("--accumulate")
         if bool(params.get("uncensored", False)):
             cmd.append("--uncensored")
+        prompt_style = params.get("prompt_style", "standard")
+        if prompt_style == "spec":
+            cmd += ["--prompt-style", "spec"]
+        # thinking: Qwen3.5 기반 method (3, 5, 7, 9) 에서만 유효
+        if bool(params.get("thinking", False)) and method in (3, 5, 7, 9):
+            cmd.append("--thinking")
         gemini_key = params.get("gemini_key", "").strip()
         if gemini_key:
             cmd += ["--gemini-key", gemini_key]
@@ -441,6 +446,10 @@ def scan_folder():
     if not folder:
         return jsonify({"count": 0, "exists": False})
     path = (BASE_DIR / folder).resolve()
+    try:
+        path.relative_to(BASE_DIR)
+    except ValueError:
+        return jsonify({"count": 0, "exists": False})
     if not path.exists():
         return jsonify({"count": 0, "exists": False})
     if path.is_file():

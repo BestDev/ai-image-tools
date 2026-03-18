@@ -1,6 +1,6 @@
 # prompt_generator_v2.py 사용 가이드
 
-> 최종 업데이트: 2026-03-15
+> 최종 업데이트: 2026-03-18
 > 환경: WSL2 / Ubuntu-24.04 / RTX 4090 24GB / Python 3.12
 > 가상환경: `<저장소 루트>/venv-prompt`
 > 검증 상태: transformers 5.2.0 / bitsandbytes 0.49.2 / GPU 실행 확인
@@ -118,7 +118,51 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 | `--quant` | — | `bf16` | 양자화: `bf16` / `nf4` / `int8` (로컬 모델 전용) |
 | `--accumulate` | `-a` | off | 누적 재개 모드 (기존 결과 유지, 미완성분만 처리) |
 | `--uncensored` | — | off | 비검열 모드: 모델에 비검열 지시문 주입, 거부/순화 없이 묘사 |
+| `--prompt-style` | — | `standard` | 프롬프트 스타일: `standard` / `spec` (아래 참조) |
+| `--thinking` | — | off | Qwen3.5 Thinking 모드 활성화 (method 3/5/7/9 전용, 아래 참조) |
 | `--gemini-key` | — | — | Gemini API 키 (method 10/11 전용, `GEMINI_API_KEY` 환경변수로도 설정 가능) |
+
+### `--prompt-style` 옵션
+
+분석 모델에 주입할 프롬프트 방식을 선택한다. JoyCaption(method 1/4/5/8/9 Pass1) 포함 **전 method에 적용**된다.
+
+| 값 | 적용 대상 | 설명 |
+|----|----------|------|
+| `standard` | 전 method | 범용 이미지 분석 프롬프트 (기존 방식) |
+| `spec` | 전 method | Z-Image Turbo 기술 사양 기반 (아래 참조) |
+
+**spec 스타일 주요 차이:**
+- **계층 구조**: 출력 순서를 scene/environment → subject → details → constraints로 강제
+- **카메라 (조건부)**: 고정 카메라 스펙 주입 없이 이미지에서 실제 카메라 특성을 식별. 인물 포트레이트에서 압축 투시·얕은 심도가 실제로 보일 때만 포트레이트 렌즈 특성 묘사. 제품/건축/풍경은 실제 화각·심도 그대로
+- **피부 텍스처**: pore-level detail, subsurface scattering, 미세 결함(주근깨, 색차) 지시
+- **색상**: 60-30-10 규칙 (주색 60% / 보조색 30% / 액센트 10%)
+- **네거티브**: stock-photo 미학, 플라스틱 피부, 과포화 네온, 강한 블룸, 과도한 샤프닝 명시 금지
+
+**모델별 spec 적용 위치:**
+
+| Method | 모델 | spec 적용 위치 |
+|--------|------|---------------|
+| 1 | JoyCaption | user content (분석 지시문 교체) |
+| 2, 3, 6, 7 | Qwen / Huihui (직접 분석) | user content (전체 분석 프롬프트) |
+| 4, 5, 8, 9 Pass1 | JoyCaption | user content (raw 캡션 지시문 교체) |
+| 4, 5, 8, 9 Pass2 | Qwen / Huihui (정제) | user content (정제 프롬프트 교체) |
+| 10, 11 | Gemini API | user content (분석 프롬프트 교체) |
+
+### `--thinking` 옵션 (Qwen3.5 전용)
+
+**적용 대상:** method 3 (Qwen3.5 직접), 5 (JoyCaption→Qwen3.5), 7 (Huihui-Qwen3.5), 9 (JoyCaption→Huihui-Qwen3.5)
+
+Qwen3.5의 내부 추론 모드(Thinking Mode)를 활성화한다. 응답 전 `<think>...</think>` 블록으로 추론을 수행한 뒤 최종 결과만 출력한다. 추론 내용은 자동으로 제거된다.
+
+| 항목 | 비활성화 (기본) | 활성화 (`--thinking`) |
+|------|---------------|----------------------|
+| temperature | 0.7 | 1.0 (공식 권장) |
+| top_p | 0.9 | 0.95 (공식 권장) |
+| 처리 시간 | 기준 | +20~40% |
+| spec 구조 준수율 | 안정적 | **향상** |
+| IFEval 기반 | 91.5% | 추론으로 더 높음 |
+
+**권장 조합:** `--prompt-style spec --thinking` — spec 복잡한 지시문을 내부 추론으로 더 충실히 이행
 
 ### `--quant` 옵션
 
@@ -151,8 +195,8 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 
 - 모델: `Qwen/Qwen3.5-9B`
 - 영어/중국어 지원
-- 속도: ~9.5초/장 (RTX 4090)
-- 특징: 이미지를 직접 분석. 영어/중국어 모두 누드 포함 정확히 묘사
+- 속도: ~9.5초/장 (RTX 4090), Thinking ON 시 +20~40%
+- 특징: 멀티모달 통합 아키텍처(early fusion). IFEval 91.5%로 전 모델 중 instruction-following 최고. `--thinking` 활성화 시 복잡한 spec 지시문 준수율이 추가 향상됨
 
 ### Method 4 — JoyCaption → Qwen3-VL (2-pass 정제)
 
@@ -163,10 +207,11 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 
 ### Method 5 — JoyCaption → Qwen3.5 (2-pass 정제)
 
-- 1단계: JoyCaption raw 캡션 생성
-- 2단계: Qwen3.5가 정제
+- 1단계: JoyCaption raw 캡션 생성 (확산 모델 친화적 자연 묘사)
+- 2단계: Qwen3.5가 정제 (`--thinking` 적용 가능)
 - 영어/중국어 지원
-- 속도: ~5.8 + 9.1 = 14.9초/장 (1단계 캐시 시 9.1초/장)
+- 속도: ~5.8 + 9.1 = 14.9초/장 (1단계 캐시 시 9.1초/장), Thinking ON 시 Pass2 +20~40%
+- 특징: JoyCaption의 확산 친화적 묘사력 + Qwen3.5의 높은 instruction-following 조합. `--prompt-style spec --thinking` 병용 시 최고 spec 준수율
 
 ### Method 10 — Gemini 3 Flash (클라우드 API)
 
@@ -502,3 +547,47 @@ python3 prompt_generator_v2.py image/dataset -o output/ab_35_zh --method 7 --lan
 | 일반 이미지 품질 | 동일 | 동일 |
 | 속도 | 동일 | 동일 |
 | VRAM | 동일 | 동일 |
+
+---
+
+## 10. 모델별 특성 및 최적 조합 가이드
+
+### 3개 모델 핵심 비교
+
+| 항목 | JoyCaption Beta One | Qwen3-VL-8B | Qwen3.5-9B |
+|------|---------------------|-------------|------------|
+| 아키텍처 | SigLIP2 + Llama 3.1 8B (LLaVA) | Qwen 비전 인코더 + Qwen3 | Hybrid (DeltaNet+MoE) + early fusion |
+| 학습 목적 | 확산 모델 학습 캡션 전용 | 범용 VLM | 범용 멀티모달 + 추론 |
+| Instruction-following | **1.5~3% 실패율** | 안정적 | **IFEval 91.5% (최고)** |
+| 자연스러운 확산 캡션 | **최고** (특화 파인튜닝) | 프롬프트 의존 | 프롬프트 의존 |
+| Thinking 모드 | 없음 | 없음 | **기본 탑재** |
+| 다국어 | 영어 전용 | 영어/중국어 | **201개 언어** |
+| spec 구조 준수 | 불안정 | 안정적 | **가장 안정적** |
+
+### 모델 특성의 본질
+
+**JoyCaption의 강점은 "더 잘 보는 것"이 아니다.**
+확산 모델 학습 데이터 목적으로 파인튜닝되어, 별도 프롬프트 없이도 의상·포즈·피부·재질 위주 캡션을 자연스럽게 출력하는 경향이 있을 뿐이다. 비전 지각 능력 자체는 Qwen3-VL과 유사하다.
+
+**Qwen3.5-9B의 Thinking 모드**는 복잡한 spec 지시문을 응답 전에 내부적으로 분석해 더 정확하게 이행한다. spec 스타일과 병용하면 구조적 품질이 추가 향상된다.
+
+### 목적별 권장 조합
+
+| 목적 | 권장 설정 |
+|------|----------|
+| 속도 우선, 안정적 품질 | `--method 2 --prompt-style standard` |
+| spec 준수, 빠른 처리 | `--method 2 --prompt-style spec` |
+| spec 준수, 최고 품질 | `--method 3 --prompt-style spec --thinking` |
+| 자연스러운 확산 캡션 (영어) | `--method 1 --prompt-style standard` |
+| JoyCaption 스타일 + spec 단일패스 | `--method 1 --prompt-style spec` |
+| **최고 품질 종합** | `--method 5 --prompt-style spec --thinking` |
+| 성인 이미지, 최고 품질 | `--method 9 --prompt-style spec --thinking` |
+| GPU 없음 | `--method 10 --prompt-style spec` (Gemini API) |
+
+### 2-pass의 실제 가치
+
+`JoyCaption(spec) → Qwen3.5(spec + thinking)` 조합의 의미:
+- **Pass 1 (JoyCaption)**: 확산 모델 친화적 자연 묘사 + spec 구조 유도
+- **Pass 2 (Qwen3.5 + thinking)**: JoyCaption raw 캡션을 spec에 맞게 신뢰성 높게 재구성
+
+단순히 "JoyCaption이 더 잘 보기 때문"이 아니라, JoyCaption의 출력 스타일(확산 특화)을 Qwen3.5의 높은 instruction-following과 추론 능력으로 정제하는 구조다.

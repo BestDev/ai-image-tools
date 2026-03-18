@@ -6,14 +6,38 @@ prompt_generator_v2.py — Z-Image Turbo 프롬프트 생성 (v2)
   python3 prompt_generator_v2.py <입력폴더> -o <출력폴더> [옵션]
 
 메소드:
-  1 - JoyCaption (영어 전용, raw 캡션)
-  2 - Qwen3-VL-8B 직접 이미지 분석
-  3 - Qwen3.5-9B 직접 이미지 분석
-  4 - JoyCaption raw → Qwen3-VL-8B 정제 (2-pass)
-  5 - JoyCaption raw → Qwen3.5-9B 정제 (2-pass)
+   1 - JoyCaption (영어 전용, raw 캡션)
+   2 - Qwen3-VL-8B 직접 이미지 분석
+   3 - Qwen3.5-9B 직접 이미지 분석
+   4 - JoyCaption raw → Qwen3-VL-8B 정제 (2-pass)
+   5 - JoyCaption raw → Qwen3.5-9B 정제 (2-pass)
+   6 - Huihui-Qwen3-VL-8B abliterated 직접 이미지 분석
+   7 - Huihui-Qwen3.5-9B abliterated 직접 이미지 분석
+   8 - JoyCaption raw → Huihui-Qwen3-VL abliterated 정제 (2-pass)
+   9 - JoyCaption raw → Huihui-Qwen3.5 abliterated 정제 (2-pass)
+  10 - Gemini 3 Flash (클라우드 API)
+  11 - Gemini 3.1 Flash-Lite (클라우드 API)
+
+프롬프트 스타일 (--prompt-style):
+  standard - 범용 이미지 분석 (기본값)
+  spec     - Z-Image Turbo 기술 사양:
+               · scene→subject→details→constraints 계층 구조
+               · 실제 이미지 기반 카메라 특성 식별 (처방 없음)
+               · pore-level 피부 텍스처
+               · 60-30-10 색상 팔레트
+               · 상세 네거티브 제약
+             JoyCaption(1/4/5/8/9 Pass1), Qwen/Huihui(2/3/6/7), Gemini(10/11),
+             2-pass 정제(4/5/8/9 Pass2) 모두 적용됨
+
+--thinking (Qwen3.5 전용, method 3/5/7/9):
+  Qwen3.5의 내부 추론(Thinking) 모드 활성화.
+  응답 전 <think>...</think> 추론 후 최종 결과만 출력.
+  spec 스타일과 함께 사용 시 spec 구조 준수율이 향상됨.
+  단, 처리 시간이 20~40% 증가할 수 있음.
+  권장 샘플링: temperature=1.0 / top_p=0.95 (자동 적용)
 
 출력:
-  <출력폴더>/prompts_raw.txt  - JoyCaption raw 캡션 (method 1, 4, 5)
+  <출력폴더>/prompts_raw.txt  - JoyCaption raw 캡션 (method 1, 4, 5, 8, 9)
   <출력폴더>/prompts.txt      - 최종 프롬프트 (전 method)
 """
 
@@ -48,7 +72,11 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", "
 # shared_prompts.py 에서 단일 관리
 # ──────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
-from shared_prompts import SYSTEM_PROMPT_EN, SYSTEM_PROMPT_ZH  # noqa: E402
+from shared_prompts import (  # noqa: E402
+    SYSTEM_PROMPT_EN, SYSTEM_PROMPT_ZH,
+    SYSTEM_PROMPT_SPEC_EN, SYSTEM_PROMPT_SPEC_ZH,
+    JOYCAPTION_USER_EN, JOYCAPTION_USER_SPEC_EN,
+)
 
 # ──────────────────────────────────────────────
 # 정제 프롬프트 — JoyCaption raw → 최종 프롬프트 (method 4, 5)
@@ -71,6 +99,41 @@ REFINE_PROMPT_ZH = """以下是对图像的详细英文描述。基于此描述�
 - 按重要性排序：主体 → 服装与裸露区域 → 姿势体态 → 光线构图
 - 用单段流畅自然的中文输出，字数150至400字
 - 不提及水印、符号或无关文字
+
+[图像描述]
+{raw}"""
+
+# Spec 기반 정제 프롬프트 — Z-Image Turbo 기술 사양 적용 (2-Pass method 4, 5, 8, 9)
+REFINE_PROMPT_SPEC_EN = """Below is a detailed image description. Based on this description, generate a refined English prompt for the Z-Image Turbo text-to-image model following the Z-Image Turbo prompt engineering specification.
+
+Requirements:
+- Follow strict construction hierarchy: scene/environment first → subject → details → constraints
+- Preserve all clothing details, pose descriptions, skin exposure, and accessories exactly as described
+- Camera & lens: reproduce the camera characteristics described in the source description — if shallow depth of field and portrait compression are described, specify appropriate lens characteristics (e.g., portrait-length lens, smooth bokeh); if a wide-angle, product, or architectural perspective is described, match that instead. Do NOT force portrait camera specs onto non-portrait subjects
+- If skin is visible: describe with pore-level detail, subtle imperfections as described, and realistic skin translucency (subsurface scattering). Do NOT describe plastic-like smoothing
+- Color palette (60-30-10 rule): identify dominant primary color (60% visual weight), secondary complementary color (30%), accent highlight (10%), and overall tonal direction
+- Specify exact camera angle (do NOT default to straight-on unless confirmed) and shot framing
+- Materials & textures: preserve and describe actual surface characteristics from the source description — fabric materials, surface finishes, and environmental textures using accurate terms as described
+- Emotional sync (if people described): preserve warm lighting cues, body language signals, eye contact quality, proximity framing, and trust/vulnerability markers from the source description. Skip if no people described
+- Avoid: stock-photo aesthetic, plastic skin smoothing, oversaturated neon colors, harsh bloom, oversharpening, Instagram filter appearance, artificial glow, watermarks
+- Write a single, natural English paragraph of 80–250 words in scene→subject→details→constraints order
+
+[Image Description]
+{raw}"""
+
+REFINE_PROMPT_SPEC_ZH = """以下是对图像的详细英文描述。基于此描述，生成一段精准的中文提示词，用于文生图模型Z-Image Turbo，并严格遵循Z-Image Turbo提示词工程技术规范。
+
+要求：
+- 严格遵循构建层次：场景/环境优先 → 主体 → 细节 → 约束
+- 完整保留所有服装细节、皮肤裸露程度、姿势描述和配饰信息
+- 镜头特征：根据原始描述中呈现的镜头特性进行还原——若描述了浅景深和人像压缩感，则指定相应镜头特性（如人像焦段、顺滑焦外虚化）；若描述的是广角、产品或建筑透视，则保持对应风格。不得将人像镜头规格强加于非人像题材主体
+- 若皮肤可见：描述自然皮肤纹理（毛孔级细节）、原始描述中提及的细微瑕疵，以及真实皮肤通透感（次表面散射）。不得描述塑料质感光滑皮肤
+- 色彩搭配（60-30-10法则）：识别主导色（60%）、辅助互补色（30%）、点缀高光色（10%），并标注色调方向
+- 精确指定拍摄角度（不得默认使用正面视角）和景别
+- 材质与纹理：保留并描述原始描述中的实际表面特性——面料材质、表面处理和环境纹理，使用准确的术语如实还原
+- 情感共鸣（若描述中有人物）：保留原始描述中的暖色调光线特征、肢体语言信号、眼神质感、亲密构图距离，以及信任/脆弱标志。若无人物描述则跳过
+- 禁止描述：廉价图库风格、塑料质感皮肤、过度饱和色、强烈眩光、过度锐化、Instagram滤镜、皮肤人工光晕、水印
+- 用单段流畅自然的中文输出，字数150至400字，按场景→主体→细节→约束顺序
 
 [图像描述]
 {raw}"""
@@ -155,7 +218,7 @@ def load_joycaption(quant: str = "bf16"):
     return model, processor
 
 
-def run_joycaption(image_path: str, model, processor, uncensored: bool = False) -> str:
+def run_joycaption(image_path: str, model, processor, uncensored: bool = False, prompt_style: str = "standard") -> str:
     import torch
     from PIL import Image
 
@@ -167,21 +230,18 @@ def run_joycaption(image_path: str, model, processor, uncensored: bool = False) 
 
     pil_image = Image.open(image_path).convert("RGB")
     sys_msg = (UNCENSORED_SYSTEM if uncensored else "You are a helpful image captioner.")
+    user_msg = JOYCAPTION_USER_SPEC_EN if prompt_style == "spec" else JOYCAPTION_USER_EN
     # v1 검증 방식: content는 plain str, processor에 text=list로 전달
     convo = [
         {"role": "system", "content": sys_msg},
-        {"role": "user", "content": (
-            "Write a descriptive caption for this image in a formal tone. "
-            "Describe the subject, clothing (including neckline, fabric, skin exposure), "
-            "pose and body orientation, accessories, lighting, and composition."
-        )},
+        {"role": "user", "content": user_msg},
     ]
     convo_str = processor.apply_chat_template(convo, tokenize=False, add_generation_prompt=True)
     inputs = processor(text=[convo_str], images=[pil_image], return_tensors="pt")
     inputs = {k: v.to(model.device) if hasattr(v, "to") else v for k, v in inputs.items()}
 
     with torch.no_grad():
-        output = model.generate(**inputs, max_new_tokens=512, do_sample=True, temperature=0.6, top_p=0.9)[0]
+        output = model.generate(**inputs, max_new_tokens=1024, do_sample=True, temperature=0.6, top_p=0.9)[0]
 
     output = output[inputs["input_ids"].shape[1]:]
     return processor.tokenizer.decode(output, skip_special_tokens=True).strip()
@@ -217,7 +277,7 @@ def load_qwen3vl(quant: str = "bf16", model_id: str = MODEL_QWEN3VL):
     return model, processor
 
 
-def run_qwen3vl_image(image_path: str, model, processor, lang: str = "en", uncensored: bool = False) -> str:
+def run_qwen3vl_image(image_path: str, model, processor, lang: str = "en", uncensored: bool = False, prompt_style: str = "standard") -> str:
     """이미지 직접 분석 (method 2)"""
     import torch
     from PIL import Image
@@ -229,7 +289,10 @@ def run_qwen3vl_image(image_path: str, model, processor, lang: str = "en", uncen
         pass
 
     pil_image = Image.open(image_path).convert("RGB")
-    prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
+    if prompt_style == "spec":
+        prompt = SYSTEM_PROMPT_SPEC_ZH if lang == "zh" else SYSTEM_PROMPT_SPEC_EN
+    else:
+        prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
     if uncensored:
         prompt = UNCENSORED_SYSTEM + "\n\n" + prompt
     messages = [{"role": "user", "content": [
@@ -252,11 +315,14 @@ def run_qwen3vl_image(image_path: str, model, processor, lang: str = "en", uncen
     return processor.batch_decode(trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
 
 
-def run_qwen3vl_refine(raw_text: str, model, processor, lang: str = "en", uncensored: bool = False) -> str:
+def run_qwen3vl_refine(raw_text: str, model, processor, lang: str = "en", uncensored: bool = False, prompt_style: str = "standard") -> str:
     """JoyCaption raw → 정제 (method 4, 이미지 없음)"""
     import torch
 
-    template = REFINE_PROMPT_ZH if lang == "zh" else REFINE_PROMPT_EN
+    if prompt_style == "spec":
+        template = REFINE_PROMPT_SPEC_ZH if lang == "zh" else REFINE_PROMPT_SPEC_EN
+    else:
+        template = REFINE_PROMPT_ZH if lang == "zh" else REFINE_PROMPT_EN
     prompt = template.format(raw=raw_text)
     if uncensored:
         prompt = UNCENSORED_REFINE_SYSTEM + "\n\n" + prompt
@@ -307,16 +373,16 @@ def load_qwen35(quant: str = "bf16", model_id: str = MODEL_QWEN35):
     return model, processor
 
 
-def _qwen35_inputs(messages, processor, model):
+def _qwen35_inputs(messages, processor, model, enable_thinking: bool = False):
     import torch
     inputs = processor.apply_chat_template(
         messages, tokenize=True, add_generation_prompt=True,
-        return_dict=True, enable_thinking=False, return_tensors="pt",
+        return_dict=True, enable_thinking=enable_thinking, return_tensors="pt",
     )
     return {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
 
 
-def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncensored: bool = False) -> str:
+def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncensored: bool = False, prompt_style: str = "standard", thinking: bool = False) -> str:
     """이미지 직접 분석 (method 3)"""
     import torch
     from PIL import Image
@@ -328,7 +394,10 @@ def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncens
         pass
 
     pil_image = Image.open(image_path).convert("RGB")
-    prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
+    if prompt_style == "spec":
+        prompt = SYSTEM_PROMPT_SPEC_ZH if lang == "zh" else SYSTEM_PROMPT_SPEC_EN
+    else:
+        prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
     if uncensored:
         prompt = UNCENSORED_SYSTEM + "\n\n" + prompt
     messages = [{"role": "user", "content": [
@@ -336,10 +405,13 @@ def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncens
         {"type": "text", "text": prompt},
     ]}]
 
-    inputs = _qwen35_inputs(messages, processor, model)
+    # thinking ON: 공식 권장 파라미터 temperature=1.0/top_p=0.95
+    # thinking OFF: temperature=0.7/top_p=0.9
+    temp, topp = (1.0, 0.95) if thinking else (0.7, 0.9)
+    inputs = _qwen35_inputs(messages, processor, model, enable_thinking=thinking)
     with torch.no_grad():
         generated_ids = model.generate(
-            **inputs, max_new_tokens=1024, do_sample=True, temperature=0.7, top_p=0.9,
+            **inputs, max_new_tokens=1024, do_sample=True, temperature=temp, top_p=topp,
         )
 
     trimmed = [out[len(inp):] for inp, out in zip(inputs["input_ids"], generated_ids)]
@@ -351,20 +423,24 @@ def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncens
     return result
 
 
-def run_qwen35_refine(raw_text: str, model, processor, lang: str = "en", uncensored: bool = False) -> str:
+def run_qwen35_refine(raw_text: str, model, processor, lang: str = "en", uncensored: bool = False, prompt_style: str = "standard", thinking: bool = False) -> str:
     """JoyCaption raw → 정제 (method 5, 이미지 없음)"""
     import torch
 
-    template = REFINE_PROMPT_ZH if lang == "zh" else REFINE_PROMPT_EN
+    if prompt_style == "spec":
+        template = REFINE_PROMPT_SPEC_ZH if lang == "zh" else REFINE_PROMPT_SPEC_EN
+    else:
+        template = REFINE_PROMPT_ZH if lang == "zh" else REFINE_PROMPT_EN
     prompt = template.format(raw=raw_text)
     if uncensored:
         prompt = UNCENSORED_REFINE_SYSTEM + "\n\n" + prompt
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
 
-    inputs = _qwen35_inputs(messages, processor, model)
+    temp, topp = (1.0, 0.95) if thinking else (0.7, 0.9)
+    inputs = _qwen35_inputs(messages, processor, model, enable_thinking=thinking)
     with torch.no_grad():
         generated_ids = model.generate(
-            **inputs, max_new_tokens=1024, do_sample=True, temperature=0.7, top_p=0.9,
+            **inputs, max_new_tokens=1024, do_sample=True, temperature=temp, top_p=topp,
         )
 
     trimmed = [out[len(inp):] for inp, out in zip(inputs["input_ids"], generated_ids)]
@@ -441,6 +517,14 @@ def _append_prompt_raw(filepath: Path, prompt: str, index: int):
         f.write(prompt.strip() + "\n")
 
 
+_RAW_FAIL_MARKER = "[FAILED]"
+
+
+def _append_prompt_raw_fail(filepath: Path, index: int):
+    """Pass 1 실패 시 플레이스홀더 기록 — Pass 2에서 이미지-캡션 정렬 유지"""
+    _append_prompt_raw(filepath, _RAW_FAIL_MARKER, index)
+
+
 def _vram_info() -> str:
     try:
         import torch
@@ -448,243 +532,6 @@ def _vram_info() -> str:
         return f"{used:.1f} GB"
     except Exception:
         return "N/A"
-
-
-# ──────────────────────────────────────────────
-# 메소드 실행기
-# ──────────────────────────────────────────────
-def run_method1(images: list, args):
-    """JoyCaption → prompts.txt (영어 전용)"""
-    out_dir = Path(args.output_dir)
-    out_file = out_dir / "prompts.txt"
-    raw_file = out_dir / "prompts_raw.txt"
-
-    if not args.accumulate:
-        _clear_file(out_file)
-        _clear_file(raw_file)
-    done = _count_prompts(out_file) if args.accumulate else 0
-    if done:
-        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
-    images = images[done:]
-
-    model, processor = load_joycaption(args.quant)
-    print(f"VRAM: {_vram_info()}\n")
-
-    timings = []
-    for i, img_path in enumerate(images, done):
-        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
-        t = time.time()
-        try:
-            result = run_joycaption(img_path, model, processor, uncensored=args.uncensored)
-            elapsed = time.time() - t
-            timings.append(elapsed)
-            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
-            _append_prompt_raw(raw_file, result, i)
-        except Exception as e:
-            print(f"  오류: {e}")
-
-    unload(model, processor)
-    _print_stats(timings, len(images) + done)
-
-
-def run_method2(images: list, args):
-    """Qwen3-VL-8B 직접 이미지 분석 → prompts.txt"""
-    out_dir = Path(args.output_dir)
-    out_file = out_dir / "prompts.txt"
-
-    if not args.accumulate:
-        _clear_file(out_file)
-    done = _count_prompts(out_file) if args.accumulate else 0
-    if done:
-        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
-    images = images[done:]
-
-    model, processor = load_qwen3vl(args.quant)
-    print(f"VRAM: {_vram_info()}\n")
-
-    timings = []
-    for i, img_path in enumerate(images, done):
-        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
-        t = time.time()
-        try:
-            result = run_qwen3vl_image(img_path, model, processor, lang=args.lang, uncensored=args.uncensored)
-            elapsed = time.time() - t
-            timings.append(elapsed)
-            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
-        except Exception as e:
-            print(f"  오류: {e}")
-
-    unload(model, processor)
-    _print_stats(timings, len(images) + done)
-
-
-def run_method3(images: list, args):
-    """Qwen3.5-9B 직접 이미지 분석 → prompts.txt"""
-    out_dir = Path(args.output_dir)
-    out_file = out_dir / "prompts.txt"
-
-    if not args.accumulate:
-        _clear_file(out_file)
-    done = _count_prompts(out_file) if args.accumulate else 0
-    if done:
-        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
-    images = images[done:]
-
-    model, processor = load_qwen35(args.quant)
-    print(f"VRAM: {_vram_info()}\n")
-
-    timings = []
-    for i, img_path in enumerate(images, done):
-        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
-        t = time.time()
-        try:
-            result = run_qwen35_image(img_path, model, processor, lang=args.lang, uncensored=args.uncensored)
-            elapsed = time.time() - t
-            timings.append(elapsed)
-            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
-        except Exception as e:
-            print(f"  오류: {e}")
-
-    unload(model, processor)
-    _print_stats(timings, len(images) + done)
-
-
-def run_method4(images: list, args):
-    """JoyCaption raw → Qwen3-VL-8B 정제 (2-pass)"""
-    out_dir = Path(args.output_dir)
-    raw_file = out_dir / "prompts_raw.txt"
-    out_file = out_dir / "prompts.txt"
-    total = len(images)
-
-    if not args.accumulate:
-        _clear_file(raw_file)
-        _clear_file(out_file)
-    # ── Pass 1: JoyCaption raw 생성 ──
-    raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
-    if raw_done < total:
-        print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
-        imgs_p1 = images[raw_done:]
-        joy_model, joy_proc = load_joycaption(args.quant)
-        print(f"VRAM: {_vram_info()}\n")
-
-        timings = []
-        for i, img_path in enumerate(imgs_p1, raw_done):
-            print(f"  [{i+1}/{total}] {Path(img_path).name}")
-            t = time.time()
-            try:
-                raw = run_joycaption(img_path, joy_model, joy_proc, uncensored=args.uncensored)
-                elapsed = time.time() - t
-                timings.append(elapsed)
-                print(f"    완료 ({elapsed:.1f}초)")
-                _append_prompt_raw(raw_file, raw, i)
-            except Exception as e:
-                print(f"    오류: {e}")
-
-        unload(joy_model, joy_proc)
-        _print_stats(timings, total, label="Pass 1")
-    else:
-        print(f"\n[Pass 1/2] 완료 — prompts_raw.txt {total}개 복원")
-
-    # ── Pass 2: Qwen3-VL 정제 ──
-    raws = _read_prompts(raw_file)
-    final_done = _count_prompts(out_file) if args.accumulate else 0
-    if final_done >= total:
-        print(f"[Pass 2/2] 이미 완료 ({total}개)")
-        return
-
-    print(f"\n[Pass 2/2] Qwen3-VL-8B 정제 ({final_done}/{total} 완료)")
-    pairs = list(zip(images, raws))[final_done:]
-    qvl_model, qvl_proc = load_qwen3vl(args.quant)
-    print(f"VRAM: {_vram_info()}\n")
-
-    timings = []
-    for i, (img_path, raw) in enumerate(pairs, final_done):
-        print(f"  [{i+1}/{total}] {Path(img_path).name}")
-        t = time.time()
-        try:
-            result = run_qwen3vl_refine(raw, qvl_model, qvl_proc, lang=args.lang, uncensored=args.uncensored)
-            elapsed = time.time() - t
-            timings.append(elapsed)
-            print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"    {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
-        except Exception as e:
-            print(f"    오류: {e}")
-
-    unload(qvl_model, qvl_proc)
-    _print_stats(timings, total, label="Pass 2")
-
-
-def run_method5(images: list, args):
-    """JoyCaption raw → Qwen3.5-9B 정제 (2-pass)"""
-    out_dir = Path(args.output_dir)
-    raw_file = out_dir / "prompts_raw.txt"
-    out_file = out_dir / "prompts.txt"
-    total = len(images)
-
-    if not args.accumulate:
-        _clear_file(raw_file)
-        _clear_file(out_file)
-    # ── Pass 1: JoyCaption raw 생성 ──
-    raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
-    if raw_done < total:
-        print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
-        imgs_p1 = images[raw_done:]
-        joy_model, joy_proc = load_joycaption(args.quant)
-        print(f"VRAM: {_vram_info()}\n")
-
-        timings = []
-        for i, img_path in enumerate(imgs_p1, raw_done):
-            print(f"  [{i+1}/{total}] {Path(img_path).name}")
-            t = time.time()
-            try:
-                raw = run_joycaption(img_path, joy_model, joy_proc, uncensored=args.uncensored)
-                elapsed = time.time() - t
-                timings.append(elapsed)
-                print(f"    완료 ({elapsed:.1f}초)")
-                _append_prompt_raw(raw_file, raw, i)
-            except Exception as e:
-                print(f"    오류: {e}")
-
-        unload(joy_model, joy_proc)
-        _print_stats(timings, total, label="Pass 1")
-    else:
-        print(f"\n[Pass 1/2] 완료 — prompts_raw.txt {total}개 복원")
-
-    # ── Pass 2: Qwen3.5 정제 ──
-    raws = _read_prompts(raw_file)
-    final_done = _count_prompts(out_file) if args.accumulate else 0
-    if final_done >= total:
-        print(f"[Pass 2/2] 이미 완료 ({total}개)")
-        return
-
-    print(f"\n[Pass 2/2] Qwen3.5-9B 정제 ({final_done}/{total} 완료)")
-    pairs = list(zip(images, raws))[final_done:]
-    q35_model, q35_proc = load_qwen35(args.quant)
-    print(f"VRAM: {_vram_info()}\n")
-
-    timings = []
-    for i, (img_path, raw) in enumerate(pairs, final_done):
-        print(f"  [{i+1}/{total}] {Path(img_path).name}")
-        t = time.time()
-        try:
-            result = run_qwen35_refine(raw, q35_model, q35_proc, lang=args.lang, uncensored=args.uncensored)
-            elapsed = time.time() - t
-            timings.append(elapsed)
-            print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"    {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
-        except Exception as e:
-            print(f"    오류: {e}")
-
-    unload(q35_model, q35_proc)
-    _print_stats(timings, total, label="Pass 2")
 
 
 # ──────────────────────────────────────────────
@@ -700,118 +547,119 @@ def _print_stats(timings: list, total: int, label: str = ""):
 
 
 # ──────────────────────────────────────────────
-# 메인
+# 제네릭 실행기 — 로컬 모델 단일 패스
 # ──────────────────────────────────────────────
-
-def run_method6(images: list, args):
-    """Huihui-Qwen3-VL-8B abliterated 직접 이미지 분석 → prompts.txt"""
+def _run_single_local(images: list, args, loader, infer_fn, also_raw=False):
+    """
+    로컬 모델 단일 패스 실행기.
+    loader:   (args) -> (model, processor)
+    infer_fn: (image_path, model, processor, args) -> str
+    also_raw: True이면 prompts_raw.txt에도 기록 (method 1)
+    """
     out_dir = Path(args.output_dir)
     out_file = out_dir / "prompts.txt"
+    raw_file = out_dir / "prompts_raw.txt" if also_raw else None
 
     if not args.accumulate:
         _clear_file(out_file)
+        if raw_file:
+            _clear_file(raw_file)
     done = _count_prompts(out_file) if args.accumulate else 0
     if done:
         print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
-    images = images[done:]
+    remaining = images[done:]
 
-    model, processor = load_qwen3vl(args.quant, MODEL_QWEN3VL_AB)
+    model, processor = loader(args)
     print(f"VRAM: {_vram_info()}\n")
 
     timings = []
-    for i, img_path in enumerate(images, done):
-        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
+    for i, img_path in enumerate(remaining, done):
+        print(f"[{i+1}/{len(remaining)+done}] {Path(img_path).name}")
         t = time.time()
         try:
-            result = run_qwen3vl_image(img_path, model, processor, lang=args.lang, uncensored=args.uncensored)
+            result = infer_fn(img_path, model, processor, args)
             elapsed = time.time() - t
             timings.append(elapsed)
             print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
             print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
             _append_prompt(out_file, result, i)
+            if raw_file:
+                _append_prompt_raw(raw_file, result, i)
         except Exception as e:
             print(f"  오류: {e}")
 
     unload(model, processor)
-    _print_stats(timings, len(images) + done)
+    _print_stats(timings, len(remaining) + done)
 
 
-def run_method7(images: list, args):
-    """Huihui-Qwen3.5-9B abliterated 직접 이미지 분석 → prompts.txt"""
-    out_dir = Path(args.output_dir)
-    out_file = out_dir / "prompts.txt"
-
-    if not args.accumulate:
-        _clear_file(out_file)
-    done = _count_prompts(out_file) if args.accumulate else 0
-    if done:
-        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
-    images = images[done:]
-
-    model, processor = load_qwen35(args.quant, MODEL_QWEN35_AB)
-    print(f"VRAM: {_vram_info()}\n")
-
-    timings = []
-    for i, img_path in enumerate(images, done):
-        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
-        t = time.time()
-        try:
-            result = run_qwen35_image(img_path, model, processor, lang=args.lang, uncensored=args.uncensored)
-            elapsed = time.time() - t
-            timings.append(elapsed)
-            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
-        except Exception as e:
-            print(f"  오류: {e}")
-
-    unload(model, processor)
-    _print_stats(timings, len(images) + done)
-
-def run_method8(images: list, args):
-    """JoyCaption raw → Huihui-Qwen3-VL-8B abliterated 정제 (2-pass)"""
+# ──────────────────────────────────────────────
+# 제네릭 실행기 — 2-Pass (JoyCaption → 정제 모델)
+# ──────────────────────────────────────────────
+def _run_twopass(images: list, args, refine_loader, refine_fn, label_p2: str):
+    """
+    2-Pass 실행기: JoyCaption(Pass 1) → 선택 모델 정제(Pass 2).
+    refine_loader: (args) -> (model, processor)
+    refine_fn:     (raw_text, model, processor, args) -> str
+    label_p2:      Pass 2 로그에 표시할 모델명
+    """
     out_dir = Path(args.output_dir)
     raw_file = out_dir / "prompts_raw.txt"
     out_file = out_dir / "prompts.txt"
     total = len(images)
+
     if not args.accumulate:
         _clear_file(raw_file)
         _clear_file(out_file)
+
+    # ── Pass 1: JoyCaption raw 생성 ──
     raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
     if raw_done < total:
         print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
         joy_model, joy_proc = load_joycaption(args.quant)
         print(f"VRAM: {_vram_info()}\n")
+
         timings = []
         for i, img_path in enumerate(images[raw_done:], raw_done):
             print(f"  [{i+1}/{total}] {Path(img_path).name}")
             t = time.time()
             try:
-                raw = run_joycaption(img_path, joy_model, joy_proc, uncensored=args.uncensored)
+                raw = run_joycaption(img_path, joy_model, joy_proc,
+                                     uncensored=args.uncensored, prompt_style=args.prompt_style)
                 elapsed = time.time() - t
                 timings.append(elapsed)
                 print(f"    완료 ({elapsed:.1f}초)")
                 _append_prompt_raw(raw_file, raw, i)
             except Exception as e:
                 print(f"    오류: {e}")
+                _append_prompt_raw_fail(raw_file, i)
+
         unload(joy_model, joy_proc)
         _print_stats(timings, total, label="Pass 1")
     else:
         print(f"\n[Pass 1/2] 완료 — prompts_raw.txt {total}개 복원")
+
+    # ── Pass 2: 선택 모델 정제 ──
     raws = _read_prompts(raw_file)
     final_done = _count_prompts(out_file) if args.accumulate else 0
     if final_done >= total:
         print(f"[Pass 2/2] 이미 완료 ({total}개)")
         return
-    print(f"\n[Pass 2/2] Huihui-Qwen3-VL abliterated 정제 ({final_done}/{total} 완료)")
-    qvl_model, qvl_proc = load_qwen3vl(args.quant, MODEL_QWEN3VL_AB)
+
+    print(f"\n[Pass 2/2] {label_p2} 정제 ({final_done}/{total} 완료)")
+    pairs = list(zip(images, raws))[final_done:]
+    model, proc = refine_loader(args)
     print(f"VRAM: {_vram_info()}\n")
+
     timings = []
-    for i, (img_path, raw) in enumerate(list(zip(images, raws))[final_done:], final_done):
+    for i, (img_path, raw) in enumerate(pairs, final_done):
         print(f"  [{i+1}/{total}] {Path(img_path).name}")
+        if raw == _RAW_FAIL_MARKER:
+            print(f"    건너뜀 (Pass 1 실패)")
+            _append_prompt(out_file, "", i)
+            continue
         t = time.time()
         try:
-            result = run_qwen3vl_refine(raw, qvl_model, qvl_proc, lang=args.lang, uncensored=args.uncensored)
+            result = refine_fn(raw, model, proc, args)
             elapsed = time.time() - t
             timings.append(elapsed)
             print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
@@ -819,69 +667,52 @@ def run_method8(images: list, args):
             _append_prompt(out_file, result, i)
         except Exception as e:
             print(f"    오류: {e}")
-    unload(qvl_model, qvl_proc)
+
+    unload(model, proc)
     _print_stats(timings, total, label="Pass 2")
 
 
-def run_method9(images: list, args):
-    """JoyCaption raw → Huihui-Qwen3.5-9B abliterated 정제 (2-pass)"""
-    out_dir = Path(args.output_dir)
-    raw_file = out_dir / "prompts_raw.txt"
-    out_file = out_dir / "prompts.txt"
-    total = len(images)
-    if not args.accumulate:
-        _clear_file(raw_file)
-        _clear_file(out_file)
-    raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
-    if raw_done < total:
-        print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
-        joy_model, joy_proc = load_joycaption(args.quant)
-        print(f"VRAM: {_vram_info()}\n")
-        timings = []
-        for i, img_path in enumerate(images[raw_done:], raw_done):
-            print(f"  [{i+1}/{total}] {Path(img_path).name}")
-            t = time.time()
-            try:
-                raw = run_joycaption(img_path, joy_model, joy_proc, uncensored=args.uncensored)
-                elapsed = time.time() - t
-                timings.append(elapsed)
-                print(f"    완료 ({elapsed:.1f}초)")
-                _append_prompt_raw(raw_file, raw, i)
-            except Exception as e:
-                print(f"    오류: {e}")
-        unload(joy_model, joy_proc)
-        _print_stats(timings, total, label="Pass 1")
-    else:
-        print(f"\n[Pass 1/2] 완료 — prompts_raw.txt {total}개 복원")
-    raws = _read_prompts(raw_file)
-    final_done = _count_prompts(out_file) if args.accumulate else 0
-    if final_done >= total:
-        print(f"[Pass 2/2] 이미 완료 ({total}개)")
-        return
-    print(f"\n[Pass 2/2] Huihui-Qwen3.5 abliterated 정제 ({final_done}/{total} 완료)")
-    q35_model, q35_proc = load_qwen35(args.quant, MODEL_QWEN35_AB)
-    print(f"VRAM: {_vram_info()}\n")
-    timings = []
-    for i, (img_path, raw) in enumerate(list(zip(images, raws))[final_done:], final_done):
-        print(f"  [{i+1}/{total}] {Path(img_path).name}")
-        t = time.time()
-        try:
-            result = run_qwen35_refine(raw, q35_model, q35_proc, lang=args.lang, uncensored=args.uncensored)
-            elapsed = time.time() - t
-            timings.append(elapsed)
-            print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"    {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
-        except Exception as e:
-            print(f"    오류: {e}")
-    unload(q35_model, q35_proc)
-    _print_stats(timings, total, label="Pass 2")
+# ──────────────────────────────────────────────
+# 로더 / 추론 래퍼 — 제네릭 실행기용 인터페이스 통일
+# ──────────────────────────────────────────────
+def _loader_joycaption(args):
+    return load_joycaption(args.quant)
+
+def _loader_qwen3vl(args):
+    return load_qwen3vl(args.quant)
+
+def _loader_qwen35(args):
+    return load_qwen35(args.quant)
+
+def _loader_qwen3vl_ab(args):
+    return load_qwen3vl(args.quant, MODEL_QWEN3VL_AB)
+
+def _loader_qwen35_ab(args):
+    return load_qwen35(args.quant, MODEL_QWEN35_AB)
+
+
+def _infer_joycaption(img, m, p, args):
+    return run_joycaption(img, m, p, uncensored=args.uncensored, prompt_style=args.prompt_style)
+
+def _infer_qwen3vl(img, m, p, args):
+    return run_qwen3vl_image(img, m, p, lang=args.lang, uncensored=args.uncensored, prompt_style=args.prompt_style)
+
+def _infer_qwen35(img, m, p, args):
+    return run_qwen35_image(img, m, p, lang=args.lang, uncensored=args.uncensored,
+                            prompt_style=args.prompt_style, thinking=args.thinking)
+
+def _refine_qwen3vl(raw, m, p, args):
+    return run_qwen3vl_refine(raw, m, p, lang=args.lang, uncensored=args.uncensored, prompt_style=args.prompt_style)
+
+def _refine_qwen35(raw, m, p, args):
+    return run_qwen35_refine(raw, m, p, lang=args.lang, uncensored=args.uncensored,
+                             prompt_style=args.prompt_style, thinking=args.thinking)
 
 
 # ──────────────────────────────────────────────
 # Gemini API 이미지 분석
 # ──────────────────────────────────────────────
-def run_gemini_image(image_path: str, client, model_id: str, lang: str = "en") -> str:
+def run_gemini_image(image_path: str, client, model_id: str, lang: str = "en", prompt_style: str = "standard") -> str:
     """Gemini API로 이미지 분석 후 프롬프트 반환"""
     import io
     from google.genai import types
@@ -910,7 +741,10 @@ def run_gemini_image(image_path: str, client, model_id: str, lang: str = "en") -
         }
         mime_type = mime_map.get(ext, 'image/jpeg')
 
-    prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
+    if prompt_style == "spec":
+        prompt = SYSTEM_PROMPT_SPEC_ZH if lang == "zh" else SYSTEM_PROMPT_SPEC_EN
+    else:
+        prompt = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
     response = client.models.generate_content(
         model=model_id,
         contents=[
@@ -930,8 +764,23 @@ def _gemini_client(args):
     return genai.Client(api_key=api_key)
 
 
-def run_method10(images: list, args):
-    """Gemini 3 Flash 직접 이미지 분석"""
+# RPD 기반 최소 딜레이 (초): Gemini Flash 10K RPD ≈ 8.6s, Flash-Lite 150K RPD ≈ 0.6s
+_GEMINI_MIN_DELAY = {
+    MODEL_GEMINI_FLASH: 9.0,
+    MODEL_GEMINI_LITE:  1.0,
+}
+
+
+def _gemini_rate_wait(model_id: str, elapsed: float):
+    """RPD 한도를 초과하지 않도록 최소 딜레이 보장"""
+    min_delay = _GEMINI_MIN_DELAY.get(model_id, 3.0)
+    remaining = min_delay - elapsed
+    if remaining > 0:
+        time.sleep(remaining)
+
+
+def _run_gemini(images: list, args, model_id: str):
+    """제네릭 Gemini API 실행기 (rate limiting 포함)."""
     out_dir = Path(args.output_dir)
     out_file = out_dir / "prompts.txt"
 
@@ -940,58 +789,29 @@ def run_method10(images: list, args):
     done = _count_prompts(out_file) if args.accumulate else 0
     if done:
         print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
-    images = images[done:]
+    remaining = images[done:]
 
     client = _gemini_client(args)
-    print(f"[Gemini] 모델: {MODEL_GEMINI_FLASH}\n")
+    min_delay = _GEMINI_MIN_DELAY.get(model_id, 3.0)
+    print(f"[Gemini] 모델: {model_id} (RPD 보호: {min_delay}초 간격)\n")
 
     timings = []
-    for i, img_path in enumerate(images, done):
-        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
+    for i, img_path in enumerate(remaining, done):
+        print(f"[{i+1}/{len(remaining)+done}] {Path(img_path).name}")
         t = time.time()
         try:
-            result = run_gemini_image(img_path, client, MODEL_GEMINI_FLASH, lang=args.lang)
+            result = run_gemini_image(img_path, client, model_id,
+                                      lang=args.lang, prompt_style=args.prompt_style)
             elapsed = time.time() - t
             timings.append(elapsed)
             print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
             print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
             _append_prompt(out_file, result, i)
+            _gemini_rate_wait(model_id, elapsed)
         except Exception as e:
             print(f"  오류: {e}")
 
-    _print_stats(timings, len(images) + done)
-
-
-def run_method11(images: list, args):
-    """Gemini 3.1 Flash-Lite 직접 이미지 분석"""
-    out_dir = Path(args.output_dir)
-    out_file = out_dir / "prompts.txt"
-
-    if not args.accumulate:
-        _clear_file(out_file)
-    done = _count_prompts(out_file) if args.accumulate else 0
-    if done:
-        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
-    images = images[done:]
-
-    client = _gemini_client(args)
-    print(f"[Gemini] 모델: {MODEL_GEMINI_LITE}\n")
-
-    timings = []
-    for i, img_path in enumerate(images, done):
-        print(f"[{i+1}/{len(images)+done}] {Path(img_path).name}")
-        t = time.time()
-        try:
-            result = run_gemini_image(img_path, client, MODEL_GEMINI_LITE, lang=args.lang)
-            elapsed = time.time() - t
-            timings.append(elapsed)
-            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
-            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
-        except Exception as e:
-            print(f"  오류: {e}")
-
-    _print_stats(timings, len(images) + done)
+    _print_stats(timings, len(remaining) + done)
 
 
 def main():
@@ -1036,6 +856,26 @@ def main():
     parser.add_argument(
         "--gemini-key", default="",
         help="Gemini API 키 (method 10/11 전용, 환경변수 GEMINI_API_KEY 로도 설정 가능)",
+    )
+    parser.add_argument(
+        "--thinking", action="store_true",
+        help=(
+            "Qwen3.5 Thinking 모드 활성화 (method 3/5/7/9 전용)\n"
+            "응답 전 내부 추론(<think>)을 수행하여 spec 구조 준수율을 높임\n"
+            "처리 시간 20~40% 증가. temperature/top_p를 1.0/0.95로 자동 조정\n"
+            "Qwen3-VL, JoyCaption, Gemini에는 적용 안 됨"
+        ),
+    )
+    parser.add_argument(
+        "--prompt-style", default="standard", choices=["standard", "spec"],
+        help=(
+            "프롬프트 스타일 (기본: standard)\n"
+            "standard: 범용 이미지 분석 프롬프트\n"
+            "spec:     Z-Image Turbo 기술 사양 — 계층 구조(scene→subject→details→constraints),\n"
+            "          실제 이미지 기반 카메라 특성 식별(인물 포트레이트 시 렌즈 압축/심도 묘사),\n"
+            "          pore-level 피부 텍스처, 60-30-10 색상 팔레트, 상세 네거티브 제약 적용\n"
+            "          전 method (JoyCaption, Qwen, Gemini) 모두 적용됨"
+        ),
     )
     args = parser.parse_args()
 
@@ -1088,22 +928,25 @@ def main():
     print(f"언어  : {lang}")
     print(f"누적  : {'활성화' if args.accumulate else '비활성화'}")
     print(f"검열  : {'없음 (uncensored)' if args.uncensored else '기본'}")
+    print(f"스타일: {args.prompt_style}")
+    if args.method in (3, 5, 7, 9):
+        print(f"Thinking: {'활성화 (temp=1.0/top_p=0.95)' if args.thinking else '비활성화 (temp=0.7/top_p=0.9)'}")
     print()
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     dispatch = {
-        1: run_method1,
-        2: run_method2,
-        3: run_method3,
-        4: run_method4,
-        5: run_method5,
-        6: run_method6,
-        7: run_method7,
-        8: run_method8,
-        9: run_method9,
-        10: run_method10,
-        11: run_method11,
+        1:  lambda imgs, a: _run_single_local(imgs, a, _loader_joycaption, _infer_joycaption, also_raw=True),
+        2:  lambda imgs, a: _run_single_local(imgs, a, _loader_qwen3vl, _infer_qwen3vl),
+        3:  lambda imgs, a: _run_single_local(imgs, a, _loader_qwen35, _infer_qwen35),
+        4:  lambda imgs, a: _run_twopass(imgs, a, _loader_qwen3vl, _refine_qwen3vl, "Qwen3-VL-8B"),
+        5:  lambda imgs, a: _run_twopass(imgs, a, _loader_qwen35, _refine_qwen35, "Qwen3.5-9B"),
+        6:  lambda imgs, a: _run_single_local(imgs, a, _loader_qwen3vl_ab, _infer_qwen3vl),
+        7:  lambda imgs, a: _run_single_local(imgs, a, _loader_qwen35_ab, _infer_qwen35),
+        8:  lambda imgs, a: _run_twopass(imgs, a, _loader_qwen3vl_ab, _refine_qwen3vl, "Huihui-Qwen3-VL"),
+        9:  lambda imgs, a: _run_twopass(imgs, a, _loader_qwen35_ab, _refine_qwen35, "Huihui-Qwen3.5"),
+        10: lambda imgs, a: _run_gemini(imgs, a, MODEL_GEMINI_FLASH),
+        11: lambda imgs, a: _run_gemini(imgs, a, MODEL_GEMINI_LITE),
     }
     dispatch[args.method](images, args)
 

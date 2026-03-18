@@ -520,6 +520,17 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           </div>
         </div>
 
+        <div class="section-title" id="pstyle-title">프롬프트 스타일
+          <span class="tip" data-tip="분석 모델에 주입할 프롬프트 방식 (JoyCaption 포함 전 모델 적용)&#10;standard: 범용 이미지 분석 (기존 방식)&#10;spec: Z-Image Turbo 기술 사양 —&#10;  계층 구조(scene→subject→details→constraints)&#10;  카메라: 이미지 특성 기반 식별 (인물 포트레이트는 렌즈 압축/심도 묘사,&#10;    제품·건축·풍경은 실제 화각 그대로)&#10;  피부 텍스처(pore-level), 60-30-10 색상 팔레트, 상세 네거티브 제약&#10;  JoyCaption: user content에 적용 / Qwen·Gemini: 분석 프롬프트 전체에 적용">?</span>
+        </div>
+
+        <div id="pstyle-section" class="form-row">
+          <div class="radio-group" style="flex-direction:column;gap:6px">
+            <div class="radio-btn selected" data-group="p-pstyle" data-val="standard" onclick="selectRadio(this)">standard — 범용 이미지 분석 (기존 방식)</div>
+            <div class="radio-btn" data-group="p-pstyle" data-val="spec" onclick="selectRadio(this)">spec — Z-Image Turbo 기술 사양 (계층 구조 · 이미지 기반 카메라 식별 · 피부 텍스처 · 60-30-10 색상)</div>
+          </div>
+        </div>
+
         <div class="section-title">옵션</div>
 
         <div class="form-row" id="quant-row">
@@ -554,6 +565,11 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           <input type="checkbox" id="p-uncensored">
           <label for="p-uncensored">검열 없음 (--uncensored)</label>
           <span class="tip" data-tip="모델에 비검열 시스템 프롬프트를 추가하여 묘사 거부나 순화 없이 시각 콘텐츠를 있는 그대로 출력&#10;AI 훈련 데이터 생성용">?</span>
+        </div>
+        <div class="checkbox-row" id="thinking-row" style="display:none">
+          <input type="checkbox" id="p-thinking">
+          <label for="p-thinking">Thinking 모드 (Qwen3.5 전용)</label>
+          <span class="tip" data-tip="Qwen3.5 내부 추론 활성화 — 응답 전 &lt;think&gt; 추론 후 결과만 출력&#10;spec 스타일과 함께 쓸 때 spec 구조 준수율이 향상됨&#10;처리 시간 20~40% 증가 / temperature 1.0·top_p 0.95 자동 적용&#10;Qwen3-VL·JoyCaption·Gemini에는 적용 안 됨">?</span>
         </div>
       </div>
 
@@ -1059,6 +1075,13 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
 </div>
 
 <script>
+// ─── HTML 이스케이프 (XSS 방지) ─────────────────────────
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
 // ─── 상태 ───────────────────────────────────────────────
 let currentTool = 'prompt';
 let currentRunId = null;
@@ -1129,6 +1152,13 @@ function selectModel(el) {
   document.getElementById('gemini-key-row').classList.toggle('hidden', !isGemini);
   document.getElementById('quant-row').classList.toggle('hidden', isGemini);
   document.getElementById('uncensored-row').classList.toggle('hidden', isGemini);
+  // 프롬프트 스타일: 전 모델 표시 (JoyCaption도 standard/spec 선택 가능)
+  document.getElementById('pstyle-title').classList.remove('hidden');
+  document.getElementById('pstyle-section').classList.remove('hidden');
+  // Thinking: Qwen3.5 / Huihui-Qwen3.5 계열만 표시
+  const isQwen35 = model === 'qwen35' || model === 'huihui_35';
+  document.getElementById('thinking-row').style.display = isQwen35 ? '' : 'none';
+  if (!isQwen35) document.getElementById('p-thinking').checked = false;
   if (isJoy || isGemini) {
     document.getElementById('p-twopass').checked = false;
     document.getElementById('twopass-opts').classList.add('hidden');
@@ -1255,6 +1285,8 @@ function getFormData() {
       accumulate:   document.getElementById('p-accum').checked,
       uncensored:   document.getElementById('p-uncensored').checked,
       gemini_key:   document.getElementById('p-gemini-key').value.trim(),
+      prompt_style: document.querySelector('[data-group="p-pstyle"].selected')?.dataset.val || 'standard',
+      thinking:     document.getElementById('p-thinking').checked,
     };
   }
   if (currentTool === 'heic') {
@@ -1521,8 +1553,8 @@ async function loadHistory() {
       return;
     }
     list.innerHTML = d.runs.map(run => `
-      <div class="history-item" onclick="loadPrompts('${run.name}')">
-        <div class="history-name">${run.name}</div>
+      <div class="history-item" onclick="loadPrompts(${JSON.stringify(run.name)})">
+        <div class="history-name">${esc(run.name)}</div>
         ${run.has_prompts
           ? `<span class="history-count">${run.count}개 프롬프트</span>`
           : `<span class="history-no">결과 없음</span>`}
@@ -1553,7 +1585,7 @@ async function loadPrompts(runName) {
     if (buf.length) entries.push(buf.join('\n'));
 
     plist.innerHTML = entries.map((e,i) =>
-      `<div class="prompt-entry" onclick="copyText(this)">[${i+1}] ${e}</div>`
+      `<div class="prompt-entry" onclick="copyText(this)">[${i+1}] ${esc(e)}</div>`
     ).join('');
   } catch {
     plist.innerHTML = '<div style="color:var(--red)">불러오기 실패</div>';
@@ -1662,7 +1694,7 @@ async function showInlineResult(outputDir) {
     if (!entries.length) return;
     const plist = document.getElementById('inlinePromptList');
     plist.innerHTML = entries.map((e, i) =>
-      `<div class="prompt-entry" onclick="copyText(this)">[${i+1}] ${e}</div>`
+      `<div class="prompt-entry" onclick="copyText(this)">[${i+1}] ${esc(e)}</div>`
     ).join('');
     document.getElementById('inlineViewer').classList.remove('hidden');
   } catch { /* ignore */ }
@@ -1811,10 +1843,10 @@ async function loadQueue() {
       <div class="queue-item">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
           <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,.3);color:${SC[j.status]||'var(--dim)'}">${SL[j.status]||j.status}</span>
-          <span style="font-size:12px;color:var(--text);font-weight:500">${j.tool}</span>
+          <span style="font-size:12px;color:var(--text);font-weight:500">${esc(j.tool)}</span>
           <span style="font-size:10px;color:var(--muted);margin-left:auto">#${j.id}</span>
         </div>
-        ${j.output_dir ? `<div style="font-size:11px;color:var(--cyan);word-break:break-all">${j.output_dir}</div>` : ''}
+        ${j.output_dir ? `<div style="font-size:11px;color:var(--cyan);word-break:break-all">${esc(j.output_dir)}</div>` : ''}
         <div style="margin-top:5px;display:flex;gap:6px">
           ${j.status === 'pending' ? `<button class="btn-sm" onclick="removeFromQueue('${j.id}')">제거</button>` : ''}
           ${j.run_id ? `<button class="btn-sm" onclick="connectStream('${j.run_id}',0)">스트림 연결</button>` : ''}
@@ -1861,6 +1893,8 @@ function describeRun(params) {
     if (params.lang)      parts.push(params.lang);
     if (params.accumulate)  parts.push('이어서');
     if (params.uncensored)  parts.push('비검열');
+    if (params.prompt_style && params.prompt_style !== 'standard') parts.push(params.prompt_style);
+    if (params.thinking) parts.push('thinking');
     if (params.input_folder) parts.push(params.input_folder);
     return '프롬프트 생성 | ' + parts.join(' · ');
   }
