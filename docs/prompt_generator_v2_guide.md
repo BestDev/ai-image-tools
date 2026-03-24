@@ -117,6 +117,7 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 | `--lang` | — | `en` | 출력 언어: `en` (영어) / `zh` (중국어) |
 | `--quant` | — | `bf16` | 양자화: `bf16` / `nf4` / `int8` (로컬 모델 전용) |
 | `--accumulate` | `-a` | off | 누적 재개 모드 (기존 결과 유지, 미완성분만 처리) |
+| `--individual` | `-I` | off | 개별 저장 모드: 이미지명과 동일한 .txt 파일로 각각 저장 (예: image.jpg → image.txt) |
 | `--uncensored` | — | off | 비검열 모드: 모델에 비검열 지시문 주입, 거부/순화 없이 묘사 |
 | `--prompt-style` | — | `standard` | 프롬프트 스타일: `standard` / `spec` (아래 참조) |
 | `--thinking` | — | off | Qwen3.5 Thinking 모드 활성화 (method 3/5/7/9 전용, 아래 참조) |
@@ -246,10 +247,34 @@ python3 prompt_generator_v2.py image/dataset -o output/gemini --method 11 --lang
 
 ## 6. 출력 파일 구조
 
+### 기본 모드 (누적 저장)
+
 ```
 <출력폴더>/
 ├── prompts.txt       # 최종 프롬프트 (모든 방식)
 └── prompts_raw.txt   # JoyCaption raw 캡션 (method 1, 4, 5, 8, 9만 생성)
+```
+
+### 개별 저장 모드 (`--individual`)
+
+```
+<출력폴더>/
+├── image1.txt        # image1.jpg의 프롬프트
+├── image2.txt        # image2.jpg의 프롬프트
+├── image3.txt        # image3.jpg의 프롬프트
+└── ...
+```
+
+- 이미지 파일명과 동일한 `.txt` 파일로 개별 저장
+- 학습 데이터셋 구성에 적합 (이미지-텍스트 쌍)
+- `--accumulate`와 함께 사용하면 이미 존재하는 `.txt` 파일은 건너뜀
+
+```bash
+# 개별 저장 예시
+python3 prompt_generator_v2.py image/dataset -o output/individual --method 2 --individual
+
+# 이어서 실행 (완료된 파일 건너뜀)
+python3 prompt_generator_v2.py image/dataset -o output/individual --method 2 --individual --accumulate
 ```
 
 ### prompts.txt — 한 줄 = 한 프롬프트
@@ -375,6 +400,16 @@ TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
 python3 prompt_generator_v2.py image/dataset -o output/prompts --method 2 --uncensored
 ```
 
+### 개별 저장 모드 (학습 데이터셋용)
+
+```bash
+# 이미지별 개별 .txt 파일로 저장
+TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
+python3 prompt_generator_v2.py image/dataset -o output/dataset --method 2 --individual
+
+# 결과: image1.jpg → image1.txt, image2.jpg → image2.txt ...
+```
+
 ### 단일 이미지 테스트
 
 ```bash
@@ -489,6 +524,7 @@ pip install pillow-heif
 | 스크립트 | 방식별 별도 스크립트 | 단일 스크립트로 통합 |
 | 방식 수 | 5가지 | 11가지 (로컬 9 + 클라우드 API 2) |
 | 누적 재개 | 지원 | 지원 (`--accumulate`) |
+| 개별 저장 | 지원 | 지원 (`--individual`) |
 | 파일 초기화 | 재실행 시 append 문제 | 비누적 모드에서 자동 초기화 |
 | 이미지 정렬 | 전체 경로 기준 sort | 파일명 기준 sort (`p.name`) |
 | 2-pass 캐시 | 미지원 | prompts_raw.txt 재활용 가능 |

@@ -182,6 +182,8 @@ def build_cmd(tool: str, params: dict):
         ]
         if accumulate:
             cmd.append("--accumulate")
+        if bool(params.get("individual", False)):
+            cmd.append("--individual")
         if bool(params.get("uncensored", False)):
             cmd.append("--uncensored")
         prompt_style = params.get("prompt_style", "standard")
@@ -279,6 +281,23 @@ def build_cmd(tool: str, params: dict):
         imgs = (len([p for p in path.iterdir() if p.suffix.lower() in GEMINI_BATCH_EXT])
                 if path.is_dir() else 1)
         return cmd, imgs, output_dir
+
+    elif tool == "rename":
+        folder = params.get("input_dir", "image/dataset")
+        path = (BASE_DIR / folder).resolve()
+        cmd = [
+            VENV_PY, "-u", str(BASE_DIR / "scripts" / "rename_images.py"), str(path),
+            "--prefix", params.get("prefix", "image"),
+            "--start",  str(params.get("start", 1)),
+            "--digits", str(params.get("digits", 4)),
+            "--separator", params.get("separator", "-"),
+            "--sort", params.get("sort", "name"),
+        ]
+        if params.get("dry_run"):
+            cmd.append("--dry-run")
+        imgs = (len([p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT])
+                if path.is_dir() else 1)
+        return cmd, imgs, str(path)
 
     raise ValueError(f"알 수 없는 tool: {tool}")
 

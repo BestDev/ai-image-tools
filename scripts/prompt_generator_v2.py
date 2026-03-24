@@ -500,6 +500,26 @@ def _clear_file(filepath: Path):
     filepath.write_text("", encoding="utf-8")
 
 
+def _save_individual_prompt(img_path: str, prompt: str, out_dir: Path):
+    """이미지명과 동일한 개별 .txt 파일로 저장"""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = Path(img_path).stem
+    txt_path = out_dir / f"{stem}.txt"
+    txt_path.write_text(prompt, encoding="utf-8")
+    return txt_path
+
+
+def _individual_exists(img_path: str, out_dir: Path) -> bool:
+    """개별 .txt 파일이 이미 존재하는지 확인"""
+    stem = Path(img_path).stem
+    return (out_dir / f"{stem}.txt").exists()
+
+
+def _count_individual_done(images: list, out_dir: Path) -> int:
+    """개별 저장 모드에서 완료된 파일 수 반환"""
+    return sum(1 for img in images if _individual_exists(img, out_dir))
+
+
 def _append_prompt(filepath: Path, prompt: str, index: int):
     """prompts.txt용: 줄바꿈을 공백으로 압축 → 한 줄 = 한 프롬프트"""
     filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -559,12 +579,18 @@ def _run_single_local(images: list, args, loader, infer_fn, also_raw=False):
     out_dir = Path(args.output_dir)
     out_file = out_dir / "prompts.txt"
     raw_file = out_dir / "prompts_raw.txt" if also_raw else None
+    individual = getattr(args, 'individual', False)
 
     if not args.accumulate:
         _clear_file(out_file)
         if raw_file:
             _clear_file(raw_file)
-    done = _count_prompts(out_file) if args.accumulate else 0
+    
+    if individual:
+        done = _count_individual_done(images, out_dir)
+    else:
+        done = _count_prompts(out_file) if args.accumulate else 0
+    
     if done:
         print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
     remaining = images[done:]
@@ -582,7 +608,13 @@ def _run_single_local(images: list, args, loader, infer_fn, also_raw=False):
             timings.append(elapsed)
             print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
             print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
+            
+            if individual:
+                txt_path = _save_individual_prompt(img_path, result, out_dir)
+                print(f"  저장: {txt_path.name}")
+            else:
+                _append_prompt(out_file, result, i)
+            
             if raw_file:
                 _append_prompt_raw(raw_file, result, i)
         except Exception as e:
@@ -606,13 +638,20 @@ def _run_twopass(images: list, args, refine_loader, refine_fn, label_p2: str):
     raw_file = out_dir / "prompts_raw.txt"
     out_file = out_dir / "prompts.txt"
     total = len(images)
+    individual = getattr(args, 'individual', False)
 
-    if not args.accumulate:
+    if not args.accumulate and not individual:
         _clear_file(raw_file)
         _clear_file(out_file)
 
     # ── Pass 1: JoyCaption raw 생성 ──
-    raw_done = _count_prompts_raw(raw_file) if args.accumulate else 0
+    raw_done = _count_prompts_raw(raw_file) if args.accumulate and not individual else 0
+    if individual:
+        raw_done = sum(1 for img in images if _individual_exists(img, out_dir))
+    elif raw_done < total:
+        if raw_done:
+            print(f"[재개] Pass 1: {raw_done}/{total}장 완료")
+    
     if raw_done < total:
         print(f"\n[Pass 1/2] JoyCaption raw 생성 ({raw_done}/{total} 완료)")
         joy_model, joy_proc = load_joycaption(args.quant)
@@ -621,6 +660,11 @@ def _run_twopass(images: list, args, refine_loader, refine_fn, label_p2: str):
         timings = []
         for i, img_path in enumerate(images[raw_done:], raw_done):
             print(f"  [{i+1}/{total}] {Path(img_path).name}")
+            
+            if individual and _individual_exists(img_path, out_dir):
+                print(f"    건너뜀 (이미 존재)")
+                continue
+            
             t = time.time()
             try:
                 raw = run_joycaption(img_path, joy_model, joy_proc,
@@ -628,34 +672,63 @@ def _run_twopass(images: list, args, refine_loader, refine_fn, label_p2: str):
                 elapsed = time.time() - t
                 timings.append(elapsed)
                 print(f"    완료 ({elapsed:.1f}초)")
-                _append_prompt_raw(raw_file, raw, i)
+                
+                if individual:
+                    txt_path = _save_individual_prompt(img_path, raw, out_dir)
+                    print(f"    저장: {txt_path.name}")
+                else:
+                    _append_prompt_raw(raw_file, raw, i)
             except Exception as e:
                 print(f"    오류: {e}")
-                _append_prompt_raw_fail(raw_file, i)
+                if not individual:
+                    _append_prompt_raw_fail(raw_file, i)
 
         unload(joy_model, joy_proc)
         _print_stats(timings, total, label="Pass 1")
-    else:
+    elif not individual:
         print(f"\n[Pass 1/2] 완료 — prompts_raw.txt {total}개 복원")
 
     # ── Pass 2: 선택 모델 정제 ──
-    raws = _read_prompts(raw_file)
-    final_done = _count_prompts(out_file) if args.accumulate else 0
-    if final_done >= total:
+    if individual:
+        # 개별 모드: 각 이미지의 _raw.txt에서 읽어 정제 후 _final.txt로 저장
+        final_done = sum(1 for img in images if (out_dir / f"{Path(img).stem}.txt").exists() 
+                         and _individual_exists(img, out_dir))
+        # 이미 처리된 파일은 건너뜀 (raw 내용이 최종과 동일하면)
+        # 실제로는 raw와 final을 구분하거나, 정제 후 덮어쓰기
+        # 여기서는 정제 후 개별 파일 덮어쓰기로 처리
+    else:
+        raws = _read_prompts(raw_file)
+        final_done = _count_prompts(out_file) if args.accumulate else 0
+    
+    if not individual and final_done >= total:
         print(f"[Pass 2/2] 이미 완료 ({total}개)")
         return
+    
+    if individual:
+        # 개별 모드: 모든 이미지 처리 (raw -> 정제)
+        print(f"\n[Pass 2/2] {label_p2} 정제")
+        pairs = [(img, (out_dir / f"{Path(img).stem}.txt").read_text(encoding="utf-8").strip()) 
+                 for img in images if (out_dir / f"{Path(img).stem}.txt").exists()]
+        if not pairs:
+            print("  처리할 raw 파일 없음")
+            return
+        total_process = len(pairs)
+    else:
+        print(f"\n[Pass 2/2] {label_p2} 정제 ({final_done}/{total} 완료)")
+        pairs = list(zip(images, raws))[final_done:]
+        total_process = len(pairs) + final_done
 
-    print(f"\n[Pass 2/2] {label_p2} 정제 ({final_done}/{total} 완료)")
-    pairs = list(zip(images, raws))[final_done:]
     model, proc = refine_loader(args)
     print(f"VRAM: {_vram_info()}\n")
 
     timings = []
-    for i, (img_path, raw) in enumerate(pairs, final_done):
+    for idx, (img_path, raw) in enumerate(pairs):
+        i = images.index(img_path) if individual else final_done + idx
         print(f"  [{i+1}/{total}] {Path(img_path).name}")
         if raw == _RAW_FAIL_MARKER:
             print(f"    건너뜀 (Pass 1 실패)")
-            _append_prompt(out_file, "", i)
+            if not individual:
+                _append_prompt(out_file, "", i)
             continue
         t = time.time()
         try:
@@ -664,7 +737,12 @@ def _run_twopass(images: list, args, refine_loader, refine_fn, label_p2: str):
             timings.append(elapsed)
             print(f"    완료 ({elapsed:.1f}초) | {len(result.split())}단어")
             print(f"    {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
+            
+            if individual:
+                txt_path = _save_individual_prompt(img_path, result, out_dir)
+                print(f"    저장: {txt_path.name}")
+            else:
+                _append_prompt(out_file, result, i)
         except Exception as e:
             print(f"    오류: {e}")
 
@@ -783,10 +861,16 @@ def _run_gemini(images: list, args, model_id: str):
     """제네릭 Gemini API 실행기 (rate limiting 포함)."""
     out_dir = Path(args.output_dir)
     out_file = out_dir / "prompts.txt"
+    individual = getattr(args, 'individual', False)
 
-    if not args.accumulate:
+    if not args.accumulate and not individual:
         _clear_file(out_file)
-    done = _count_prompts(out_file) if args.accumulate else 0
+    
+    if individual:
+        done = _count_individual_done(images, out_dir)
+    else:
+        done = _count_prompts(out_file) if args.accumulate else 0
+    
     if done:
         print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
     remaining = images[done:]
@@ -806,7 +890,13 @@ def _run_gemini(images: list, args, model_id: str):
             timings.append(elapsed)
             print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
             print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
-            _append_prompt(out_file, result, i)
+            
+            if individual:
+                txt_path = _save_individual_prompt(img_path, result, out_dir)
+                print(f"  저장: {txt_path.name}")
+            else:
+                _append_prompt(out_file, result, i)
+            
             _gemini_rate_wait(model_id, elapsed)
         except Exception as e:
             print(f"  오류: {e}")
@@ -848,6 +938,10 @@ def main():
     parser.add_argument(
         "--accumulate", "-a", action="store_true",
         help="중단된 작업 이어서 처리",
+    )
+    parser.add_argument(
+        "--individual", "-I", action="store_true",
+        help="개별 저장 모드: 이미지명과 동일한 .txt 파일로 각각 저장 (예: image.jpg → image.txt)",
     )
     parser.add_argument(
         "--uncensored", action="store_true",
@@ -926,7 +1020,8 @@ def main():
     print(f"출력  : {args.output_dir}")
     print(f"양자화: {args.quant}")
     print(f"언어  : {lang}")
-    print(f"누적  : {'활성화' if args.accumulate else '비활성화'}")
+    print(f"저장  : {'개별 (.txt per image)' if args.individual else '누적 (prompts.txt)'}")
+    print(f"이어서: {'활성화' if args.accumulate else '비활성화'}")
     print(f"검열  : {'없음 (uncensored)' if args.uncensored else '기본'}")
     print(f"스타일: {args.prompt_style}")
     if args.method in (3, 5, 7, 9):
@@ -950,7 +1045,10 @@ def main():
     }
     dispatch[args.method](images, args)
 
-    print(f"\n저장 완료: {args.output_dir}/prompts.txt")
+    if args.individual:
+        print(f"\n저장 완료: {args.output_dir}/ (개별 .txt 파일)")
+    else:
+        print(f"\n저장 완료: {args.output_dir}/prompts.txt")
 
 
 if __name__ == "__main__":

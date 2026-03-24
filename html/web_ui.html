@@ -428,6 +428,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
   <div class="tab"        data-tool="classifier" onclick="switchTab('classifier')">📂 이미지 분류</div>
   <div class="tab"        data-tool="clothing"     onclick="switchTab('clothing')">👗 의상 추출</div>
   <div class="tab"        data-tool="gemini_batch" onclick="switchTab('gemini_batch')">☁ Gemini Batch</div>
+  <div class="tab"        data-tool="rename"        onclick="switchTab('rename')">📝 이름 변경</div>
   <div class="tab"        data-tool="queue"        onclick="switchTab('queue')">⏱ 배치 큐</div>
   <div class="tab"        data-tool="history"    onclick="switchTab('history')">📋 실행 이력</div>
 </div>
@@ -560,6 +561,11 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           <input type="checkbox" id="p-accum">
           <label for="p-accum">이어서 실행 (--accumulate)</label>
           <span class="tip" data-tip="이미 생성된 항목은 건너뛰고 나머지만 처리&#10;중단된 작업을 재개하거나, 이미지 추가 후 나머지만 처리할 때">?</span>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="p-individual">
+          <label for="p-individual">개별 저장 (--individual)</label>
+          <span class="tip" data-tip="이미지명과 동일한 .txt 파일로 각각 저장&#10;예: image.jpg → image.txt&#10;미체크 시 prompts.txt 하나에 누적">?</span>
         </div>
         <div class="checkbox-row" id="uncensored-row">
           <input type="checkbox" id="p-uncensored">
@@ -874,6 +880,81 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           <input type="checkbox" id="gb-dry" onchange="onGbDryRunChange()">
           <label for="gb-dry">드라이런 (처리 목록만 출력)</label>
           <span class="tip" data-tip="실제 API 호출 없이 처리 대상 목록만 출력">?</span>
+        </div>
+      </div>
+
+      <!-- ══ 이름 변경 ══ -->
+      <div id="form-rename" class="tab-content">
+        <div class="section-title">입력</div>
+        <div class="form-row">
+          <div class="form-label">
+            입력 폴더
+            <span class="tip tip-down" data-tip="이름을 변경할 이미지가 있는 폴더">?</span>
+          </div>
+          <div class="folder-row">
+            <input type="text" id="rn-input" value="image/dataset" oninput="clearCount('rn-count')">
+            <button class="browse-btn" onclick="openFolderBrowser('rn-input')" title="폴더 탐색">📁</button>
+            <button class="scan-btn" onclick="scanFolder('rn-input','rn-count','image')">스캔</button>
+          </div>
+          <div id="rn-count" class="count-badge"></div>
+        </div>
+
+        <div class="section-title">파일명 설정</div>
+        <div class="form-row">
+          <div class="form-label">
+            접두사 (prefix)
+            <span class="tip" data-tip="파일명 앞에 붙을 접두사&#10;예: photo -> photo-0001.jpg">?</span>
+          </div>
+          <input type="text" id="rn-prefix" value="image" placeholder="예: photo, dataset">
+        </div>
+        <div class="form-row">
+          <div class="form-label">
+            구분자
+            <span class="tip" data-tip="접두사와 숫자 사이 구분자&#10;기본: - (photo-0001.jpg)">?</span>
+          </div>
+          <div class="input-inline">
+            <input type="text" id="rn-separator" value="-" style="width:60px;text-align:center">
+            <span>예: photo<span style="color:var(--cyan)">-</span>0001.jpg</span>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-label">
+            시작 번호
+            <span class="tip" data-tip="첫 파일의 번호&#10;기본: 1">?</span>
+          </div>
+          <div class="input-inline">
+            <input type="number" id="rn-start" value="1" min="1" style="width:80px">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-label">
+            숫자 자릿수
+            <span class="tip" data-tip="번호의 자릿수&#10;4: 0001, 0002...&#10;5: 00001, 00002...">?</span>
+          </div>
+          <div class="input-inline">
+            <input type="number" id="rn-digits" value="4" min="1" max="10" style="width:80px">
+            <span>자리 (예: 4 -> 0001)</span>
+          </div>
+        </div>
+
+        <div class="section-title">정렬</div>
+        <div class="form-row">
+          <div class="form-label">
+            정렬 기준
+            <span class="tip" data-tip="name: 파일명 순 (기본)&#10;date: 수정일 순&#10;size: 파일 크기 순">?</span>
+          </div>
+          <div class="radio-group">
+            <div class="radio-btn selected" data-group="rn-sort" data-val="name" onclick="selectRadio(this)">파일명</div>
+            <div class="radio-btn" data-group="rn-sort" data-val="date" onclick="selectRadio(this)">수정일</div>
+            <div class="radio-btn" data-group="rn-sort" data-val="size" onclick="selectRadio(this)">크기</div>
+          </div>
+        </div>
+
+        <div class="section-title">옵션</div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="rn-dry">
+          <label for="rn-dry">드라이런 (미리보기만)</label>
+          <span class="tip" data-tip="실제 변경 없이 변경될 파일명만 미리 출력">?</span>
         </div>
       </div>
 
@@ -1283,6 +1364,7 @@ function getFormData() {
       quant:        document.getElementById('p-quant').value,
       lang:         model === 'joycaption' ? 'en' : document.getElementById('p-lang').value,
       accumulate:   document.getElementById('p-accum').checked,
+      individual:   document.getElementById('p-individual').checked,
       uncensored:   document.getElementById('p-uncensored').checked,
       gemini_key:   document.getElementById('p-gemini-key').value.trim(),
       prompt_style: document.querySelector('[data-group="p-pstyle"].selected')?.dataset.val || 'standard',
@@ -1338,6 +1420,18 @@ function getFormData() {
       skip_existing: document.getElementById('gb-skip').checked,
       no_session:   document.getElementById('gb-no-session').checked,
       dry_run:      document.getElementById('gb-dry').checked,
+    };
+  }
+  if (currentTool === 'rename') {
+    return {
+      tool:       'rename',
+      input_dir:  document.getElementById('rn-input').value.trim(),
+      prefix:     document.getElementById('rn-prefix').value.trim() || 'image',
+      start:      parseInt(document.getElementById('rn-start').value) || 1,
+      digits:     parseInt(document.getElementById('rn-digits').value) || 4,
+      separator:  document.getElementById('rn-separator').value || '-',
+      sort:       document.querySelector('[data-group="rn-sort"].selected')?.dataset.val || 'name',
+      dry_run:    document.getElementById('rn-dry').checked,
     };
   }
   return {};
@@ -1891,6 +1985,7 @@ function describeRun(params) {
     if (params.two_pass)  parts.push('2-pass');
     if (params.quant)     parts.push(params.quant);
     if (params.lang)      parts.push(params.lang);
+    if (params.individual) parts.push('개별저장');
     if (params.accumulate)  parts.push('이어서');
     if (params.uncensored)  parts.push('비검열');
     if (params.prompt_style && params.prompt_style !== 'standard') parts.push(params.prompt_style);
@@ -1906,6 +2001,13 @@ function describeRun(params) {
     if (params.output_mode && params.output_mode !== 'both') parts.push(params.output_mode);
     if (params.input_dir) parts.push(params.input_dir);
     return 'Gemini Batch | ' + parts.join(' · ');
+  }
+  if (t === 'rename') {
+    const parts = [params.prefix || 'image'];
+    parts.push(`${params.separator || '-'}%0${params.digits || 4}d`);
+    if (params.dry_run) parts.push('미리보기');
+    if (params.input_dir) parts.push(params.input_dir);
+    return '이름 변경 | ' + parts.join(' · ');
   }
   return t;
 }
