@@ -75,7 +75,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from shared_prompts import (  # noqa: E402
     SYSTEM_PROMPT_EN, SYSTEM_PROMPT_ZH,
     SYSTEM_PROMPT_SPEC_EN, SYSTEM_PROMPT_SPEC_ZH,
-    JOYCAPTION_USER_EN, JOYCAPTION_USER_SPEC_EN,
+    JOYCAPTION_SYSTEM, JOYCAPTION_USER_EN, JOYCAPTION_USER_SPEC_EN,
 )
 
 # ──────────────────────────────────────────────
@@ -229,7 +229,7 @@ def run_joycaption(image_path: str, model, processor, uncensored: bool = False, 
         pass
 
     pil_image = Image.open(image_path).convert("RGB")
-    sys_msg = (UNCENSORED_SYSTEM if uncensored else "You are a helpful image captioner.")
+    sys_msg = (UNCENSORED_SYSTEM if uncensored else JOYCAPTION_SYSTEM)
     user_msg = JOYCAPTION_USER_SPEC_EN if prompt_style == "spec" else JOYCAPTION_USER_EN
     # v1 검증 방식: content는 plain str, processor에 text=list로 전달
     convo = [
