@@ -154,15 +154,19 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 
 **적용 대상:** method 3 (Qwen3.5 직접), 5 (JoyCaption→Qwen3.5), 7 (Huihui-Qwen3.5), 9 (JoyCaption→Huihui-Qwen3.5)
 
-Qwen3.5의 내부 추론 모드(Thinking Mode)를 활성화한다. 응답 전 `<think>...</think>` 블록으로 추론을 수행한 뒤 최종 결과만 출력한다. 추론 내용은 자동으로 제거된다.
+Qwen3.5의 내부 추론 모드(Thinking Mode)를 활성화한다. 응답 전 `<think>...</think>` 블록으로 추론을 수행한 뒤 최종 결과만 출력한다. 추론 내용은 자동으로 제거된다(`</think>` 기준 split).
 
 | 항목 | 비활성화 (기본) | 활성화 (`--thinking`) |
 |------|---------------|----------------------|
-| temperature | 0.7 | 1.0 (공식 권장) |
+| temperature | 0.7 | 1.0 ([공식 권장](https://huggingface.co/Qwen/Qwen3.5-9B)) |
 | top_p | 0.9 | 0.95 (공식 권장) |
+| top_k | 20 | 20 (공식 권장) |
+| max_new_tokens | 1024 | 32768 (thinking 토큰 예산 확보) |
 | 처리 시간 | 기준 | +20~40% |
 | spec 구조 준수율 | 안정적 | **향상** |
 | IFEval 기반 | 91.5% | 추론으로 더 높음 |
+
+> **주의:** `max_new_tokens`는 상한선일 뿐이며, EOS 도달 시 조기 종료된다. HuggingFace transformers는 KV cache를 동적 할당하므로 미사용 토큰은 VRAM을 차지하지 않는다.
 
 **권장 조합:** `--prompt-style spec --thinking` — spec 복잡한 지시문을 내부 추론으로 더 충실히 이행
 

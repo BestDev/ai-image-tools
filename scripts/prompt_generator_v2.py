@@ -34,7 +34,8 @@ prompt_generator_v2.py — Z-Image Turbo 프롬프트 생성 (v2)
   응답 전 <think>...</think> 추론 후 최종 결과만 출력.
   spec 스타일과 함께 사용 시 spec 구조 준수율이 향상됨.
   단, 처리 시간이 20~40% 증가할 수 있음.
-  권장 샘플링: temperature=1.0 / top_p=0.95 (자동 적용)
+  권장 샘플링: temperature=1.0 / top_p=0.95 / top_k=20 (자동 적용)
+  max_new_tokens: 32768 (thinking 토큰 예산 확보, 미사용분 VRAM 미점유)
 
 출력:
   <출력폴더>/prompts_raw.txt  - JoyCaption raw 캡션 (method 1, 4, 5, 8, 9)
@@ -479,13 +480,15 @@ def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncens
         {"type": "text", "text": prompt},
     ]}]
 
-    # thinking ON: 공식 권장 파라미터 temperature=1.0/top_p=0.95
-    # thinking OFF: temperature=0.7/top_p=0.9
+    # thinking ON: 공식 권장 temperature=1.0/top_p=0.95/top_k=20, max_new_tokens=16384
+    # thinking OFF: temperature=0.7/top_p=0.9/top_k=20
     temp, topp = (1.0, 0.95) if thinking else (0.7, 0.9)
+    max_tok = 32768 if thinking else 1024
     inputs = _qwen35_inputs(messages, processor, model, enable_thinking=thinking)
     with torch.no_grad():
         generated_ids = model.generate(
-            **inputs, max_new_tokens=1024, do_sample=True, temperature=temp, top_p=topp,
+            **inputs, max_new_tokens=max_tok, do_sample=True,
+            temperature=temp, top_p=topp, top_k=20,
         )
 
     in_tok = inputs["input_ids"].shape[1]
@@ -494,7 +497,9 @@ def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncens
     result = processor.batch_decode(trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
 
     import re
-    if "<think>" in result:
+    if "</think>" in result:
+        result = result.split("</think>", 1)[-1].strip()
+    elif "<think>" in result:
         result = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL).strip()
     return result
 
@@ -510,10 +515,12 @@ def run_qwen35_refine(raw_text: str, model, processor, lang: str = "en", uncenso
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
 
     temp, topp = (1.0, 0.95) if thinking else (0.7, 0.9)
+    max_tok = 32768 if thinking else 1024
     inputs = _qwen35_inputs(messages, processor, model, enable_thinking=thinking)
     with torch.no_grad():
         generated_ids = model.generate(
-            **inputs, max_new_tokens=1024, do_sample=True, temperature=temp, top_p=topp,
+            **inputs, max_new_tokens=max_tok, do_sample=True,
+            temperature=temp, top_p=topp, top_k=20,
         )
 
     in_tok = inputs["input_ids"].shape[1]
@@ -522,7 +529,9 @@ def run_qwen35_refine(raw_text: str, model, processor, lang: str = "en", uncenso
     result = processor.batch_decode(trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
 
     import re
-    if "<think>" in result:
+    if "</think>" in result:
+        result = result.split("</think>", 1)[-1].strip()
+    elif "<think>" in result:
         result = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL).strip()
     return result
 
@@ -1047,7 +1056,8 @@ def main():
         help=(
             "Qwen3.5 Thinking 모드 활성화 (method 3/5/7/9 전용)\n"
             "응답 전 내부 추론(<think>)을 수행하여 spec 구조 준수율을 높임\n"
-            "처리 시간 20~40% 증가. temperature/top_p를 1.0/0.95로 자동 조정\n"
+            "처리 시간 20~40% 증가. temperature=1.0/top_p=0.95/top_k=20 자동 조정\n"
+            "max_new_tokens=32768 (미사용분 VRAM 미점유)\n"
             "Qwen3-VL, JoyCaption, Gemini에는 적용 안 됨"
         ),
     )
@@ -1121,7 +1131,7 @@ def main():
     print(f"검열  : {'없음 (uncensored)' if args.uncensored else '기본'}")
     print(f"스타일: {args.prompt_style}")
     if args.method in (3, 5, 7, 9):
-        print(f"Thinking: {'활성화 (temp=1.0/top_p=0.95)' if args.thinking else '비활성화 (temp=0.7/top_p=0.9)'}")
+        print(f"Thinking: {'활성화 (temp=1.0/top_p=0.95/top_k=20, max_tok=32768)' if args.thinking else '비활성화 (temp=0.7/top_p=0.9/top_k=20)'}")
     print()
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
