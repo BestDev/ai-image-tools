@@ -179,6 +179,7 @@ def build_cmd(tool: str, params: dict):
             "--method", str(method),
             "--quant", params.get("quant", "bf16"),
             "--lang", params.get("lang", "en"),
+            "--instr-lang", params.get("instr_lang", "en"),
         ]
         if accumulate:
             cmd.append("--accumulate")

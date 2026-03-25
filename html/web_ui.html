@@ -546,10 +546,21 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           </select>
         </div>
 
+        <div class="form-row" id="p-instr-lang-row">
+          <div class="form-label">
+            지시 언어
+            <span class="tip" data-tip="모델에게 지시(분석 기준)를 내리는 언어&#10;en: 영어 지시 — 소형 모델 instruction-following 안정적&#10;zh: 중국어 지시 — Qwen3 계열에서 비교 테스트 권장&#10;JoyCaption 모델은 영어 전용">?</span>
+          </div>
+          <select id="p-instr-lang">
+            <option value="en" selected>English (영어)</option>
+            <option value="zh">中文 (중국어)</option>
+          </select>
+        </div>
+
         <div class="form-row" id="p-lang-row">
           <div class="form-label">
             출력 언어
-            <span class="tip" data-tip="en: 영어 프롬프트 (대부분 이미지 생성 AI 권장)&#10;zh: 중국어 프롬프트 (Z-Image Turbo 이중언어 지원)&#10;JoyCaption 모델은 영어 전용">?</span>
+            <span class="tip" data-tip="en: 영어 프롬프트 (대부분 이미지 생성 AI 권장)&#10;zh: 중국어 프롬프트 (Z-Image Turbo 이중언어 지원)&#10;JoyCaption 모델은 영어 전용&#10;&#10;지시 언어와 다르게 설정하면 교차 모드로 동작:&#10;EN 지시 + ZH 출력 / ZH 지시 + EN 출력">?</span>
           </div>
           <select id="p-lang">
             <option value="en" selected>English (영어)</option>
@@ -1228,6 +1239,7 @@ function selectModel(el) {
   document.getElementById('model-desc').textContent = info || '';
   // JoyCaption / Gemini: 2-pass 섹션 숨김
   document.getElementById('twopass-section').classList.toggle('hidden', isJoy || isGemini);
+  document.getElementById('p-instr-lang-row').classList.toggle('hidden', isJoy);
   document.getElementById('p-lang-row').classList.toggle('hidden', isJoy);
   // Gemini: API 키 표시, 양자화 숨김, 비검열 숨김
   document.getElementById('gemini-key-row').classList.toggle('hidden', !isGemini);
@@ -1362,6 +1374,7 @@ function getFormData() {
       raw_source:   twoPass ? rawSrc : 'auto',
       raw_path:     rawSrc === 'existing' ? document.getElementById('p-rawpath').value.trim() : '',
       quant:        document.getElementById('p-quant').value,
+      instr_lang:   model === 'joycaption' ? 'en' : document.getElementById('p-instr-lang').value,
       lang:         model === 'joycaption' ? 'en' : document.getElementById('p-lang').value,
       accumulate:   document.getElementById('p-accum').checked,
       individual:   document.getElementById('p-individual').checked,
@@ -1984,7 +1997,10 @@ function describeRun(params) {
     parts.push(MODEL_LABELS[params.model] || params.model);
     if (params.two_pass)  parts.push('2-pass');
     if (params.quant)     parts.push(params.quant);
-    if (params.lang)      parts.push(params.lang);
+    if (params.instr_lang && params.instr_lang !== params.lang)
+      parts.push(`${params.instr_lang}→${params.lang}`);
+    else if (params.lang)
+      parts.push(params.lang);
     if (params.individual) parts.push('개별저장');
     if (params.accumulate)  parts.push('이어서');
     if (params.uncensored)  parts.push('비검열');

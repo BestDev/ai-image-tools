@@ -114,7 +114,8 @@ python3 prompt_generator_v2.py <입력> -o <출력폴더> [옵션]
 | `input` | — | 필수 | 이미지 파일 또는 폴더 경로 |
 | `--output-dir` | `-o` | 필수 | 출력 폴더 경로 |
 | `--method` | `-m` | `2` | 방식 선택 (1~11) |
-| `--lang` | — | `en` | 출력 언어: `en` (영어) / `zh` (중국어) |
+| `--instr-lang` | — | `en` | 지시 언어: `en` (영어) / `zh` (중국어). 모델에게 지시하는 언어 |
+| `--lang` | — | `en` | 출력 언어: `en` (영어) / `zh` (중국어). 결과물 언어 |
 | `--quant` | — | `bf16` | 양자화: `bf16` / `nf4` / `int8` (로컬 모델 전용) |
 | `--accumulate` | `-a` | off | 누적 재개 모드 (기존 결과 유지, 미완성분만 처리) |
 | `--individual` | `-I` | off | 개별 저장 모드: 이미지명과 동일한 .txt 파일로 각각 저장 (예: image.jpg → image.txt) |
@@ -365,6 +366,22 @@ TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
 python3 prompt_generator_v2.py image/dataset -o output/prompts_zh --method 3 --lang zh
 ```
 
+### 교차 언어 모드 테스트
+
+```bash
+# EN 지시 + ZH 출력 (영어 지시, 중국어 결과)
+TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
+python3 prompt_generator_v2.py image/dataset -o output/en_zh --method 2 --instr-lang en --lang zh
+
+# ZH 지시 + EN 출력 (중국어 지시, 영어 결과)
+TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
+python3 prompt_generator_v2.py image/dataset -o output/zh_en --method 2 --instr-lang zh --lang en
+
+# ZH 지시 + ZH 출력 (기존 --lang zh 와 동일)
+TORCHINDUCTOR_DISABLED=1 TORCH_COMPILE_DISABLE=1 \
+python3 prompt_generator_v2.py image/dataset -o output/zh_zh --method 2 --instr-lang zh --lang zh
+```
+
 ### VRAM 부족 시 NF4 양자화
 
 ```bash
@@ -433,7 +450,21 @@ python3 prompt_generator_v2.py image/test.jpg -o output/test --method 2
 
 *Pass 1 캐시 재사용 기준 (prompts_raw.txt 있을 때)
 
-### 언어별 특성
+### 언어 조합 (`--instr-lang` × `--lang`)
+
+`--instr-lang`(지시 언어)과 `--lang`(출력 언어)을 독립적으로 설정하여 4가지 조합으로 테스트할 수 있다.
+
+| 조합 | 명령 예시 | 특징 |
+|------|-----------|------|
+| EN 지시 + EN 출력 (기본) | `--instr-lang en --lang en` | 소형 모델 instruction-following 안정 |
+| EN 지시 + ZH 출력 | `--instr-lang en --lang zh` | 개념 이해는 EN, 출력만 ZH. Gemini에 권장 |
+| ZH 지시 + ZH 출력 | `--instr-lang zh --lang zh` | Qwen3 계열 비교 테스트 |
+| ZH 지시 + EN 출력 | `--instr-lang zh --lang en` | ZH 문법 간결성 + EN 기술 용어 출력 |
+
+- `--instr-lang`를 생략하면 기본값 `en`으로 동작 (기존 동작 유지)
+- method 1(JoyCaption)은 항상 `en`/`en` 고정 (옵션 무시)
+
+### 출력 언어별 특성
 
 - **영어(en)**: Z-Image Turbo의 영문 텍스트 인코더에 최적화. 80~250단어 단일 단락
 - **중국어(zh)**: Z-Image Turbo의 Qwen 기반 중문 인코더와 호환. 150~400자 단일 단락

@@ -65,8 +65,11 @@ python3 web_ui.py
 ### 3. 커맨드라인 직접 사용
 
 ```bash
-# 프롬프트 생성 (방식 2 - Qwen3-VL, 영어)
+# 프롬프트 생성 (방식 2 - Qwen3-VL, 영어 지시 + 영어 출력)
 python3 scripts/prompt_generator_v2.py image/dataset --output-dir output/out --method 2 --lang en
+
+# 교차 언어 모드 (영어 지시 + 중국어 출력)
+python3 scripts/prompt_generator_v2.py image/dataset --output-dir output/out --method 2 --instr-lang en --lang zh
 
 # 프롬프트 생성 (Gemini CLI 배치, GPU 불필요)
 python3 scripts/gemini_batch.py image/dataset -o output/out --model flash
