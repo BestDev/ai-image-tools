@@ -320,7 +320,9 @@ def run_joycaption(image_path: str, model, processor, uncensored: bool = False, 
     with torch.no_grad():
         output = model.generate(**inputs, max_new_tokens=1024, do_sample=True, temperature=0.6, top_p=0.9)[0]
 
-    output = output[inputs["input_ids"].shape[1]:]
+    in_tok = inputs["input_ids"].shape[1]
+    output = output[in_tok:]
+    print(f"  [TOKEN] in={in_tok} out={len(output)}")
     return processor.tokenizer.decode(output, skip_special_tokens=True).strip()
 
 
@@ -385,7 +387,9 @@ def run_qwen3vl_image(image_path: str, model, processor, lang: str = "en", uncen
             **inputs, max_new_tokens=1024, do_sample=True, temperature=0.7, top_p=0.9,
         )
 
+    in_tok = inputs.input_ids.shape[1]
     trimmed = [out[len(inp):] for inp, out in zip(inputs.input_ids, generated_ids)]
+    print(f"  [TOKEN] in={in_tok} out={len(trimmed[0])}")
     return processor.batch_decode(trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
 
 
@@ -410,7 +414,9 @@ def run_qwen3vl_refine(raw_text: str, model, processor, lang: str = "en", uncens
             **inputs, max_new_tokens=1024, do_sample=True, temperature=0.7, top_p=0.9,
         )
 
+    in_tok = inputs.input_ids.shape[1]
     trimmed = [out[len(inp):] for inp, out in zip(inputs.input_ids, generated_ids)]
+    print(f"  [TOKEN] in={in_tok} out={len(trimmed[0])}")
     return processor.batch_decode(trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
 
 
@@ -482,7 +488,9 @@ def run_qwen35_image(image_path: str, model, processor, lang: str = "en", uncens
             **inputs, max_new_tokens=1024, do_sample=True, temperature=temp, top_p=topp,
         )
 
+    in_tok = inputs["input_ids"].shape[1]
     trimmed = [out[len(inp):] for inp, out in zip(inputs["input_ids"], generated_ids)]
+    print(f"  [TOKEN] in={in_tok} out={len(trimmed[0])}")
     result = processor.batch_decode(trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
 
     import re
@@ -508,7 +516,9 @@ def run_qwen35_refine(raw_text: str, model, processor, lang: str = "en", uncenso
             **inputs, max_new_tokens=1024, do_sample=True, temperature=temp, top_p=topp,
         )
 
+    in_tok = inputs["input_ids"].shape[1]
     trimmed = [out[len(inp):] for inp, out in zip(inputs["input_ids"], generated_ids)]
+    print(f"  [TOKEN] in={in_tok} out={len(trimmed[0])}")
     result = processor.batch_decode(trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
 
     import re
@@ -896,6 +906,12 @@ def run_gemini_image(image_path: str, client, model_id: str, lang: str = "en", p
             prompt,
         ],
     )
+    try:
+        in_tok  = response.usage_metadata.prompt_token_count
+        out_tok = response.usage_metadata.candidates_token_count
+        print(f"  [TOKEN] in={in_tok} out={out_tok}")
+    except Exception:
+        pass
     return response.text.strip()
 
 

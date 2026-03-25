@@ -1021,7 +1021,10 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
       <div class="stat-card full-width" id="progressCard">
         <div class="stat-label">진행 상황</div>
         <div id="runInfo" style="font-size:11.5px;color:var(--cyan);margin-bottom:5px;min-height:15px;word-break:break-all"></div>
-        <div class="stat-value" id="progText">대기 중</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div class="stat-value" id="progText">대기 중</div>
+          <div id="elapsedTimer" style="font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums"></div>
+        </div>
         <div class="current-file" id="currentFile"></div>
         <div class="progress-wrap">
           <div class="progress-bar-bg">
@@ -1046,6 +1049,29 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
           <div class="timing-item">
             <div class="timing-num" id="timeETA">—</div>
             <div class="timing-lbl">예상 완료 (초)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 토큰 사용량 -->
+      <div class="stat-card full-width hidden" id="tokenCard">
+        <div class="stat-label">토큰 사용량</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          <div class="timing-item">
+            <div class="timing-num" id="tokInLast">—</div>
+            <div class="timing-lbl">입력 (마지막)</div>
+          </div>
+          <div class="timing-item">
+            <div class="timing-num" id="tokOutLast">—</div>
+            <div class="timing-lbl">출력 (마지막)</div>
+          </div>
+          <div class="timing-item">
+            <div class="timing-num" id="tokInTotal">—</div>
+            <div class="timing-lbl">입력 누적</div>
+          </div>
+          <div class="timing-item">
+            <div class="timing-num" id="tokOutTotal">—</div>
+            <div class="timing-lbl">출력 누적</div>
           </div>
         </div>
       </div>
@@ -1487,6 +1513,7 @@ async function stopRun() {
   await fetch(`/api/stop/${currentRunId}`, {method: 'POST'});
   evtSource?.close();
   setRunning(false);
+  _stopTimer(null);
   appendLog('\n[중단됨]', 'err');
   document.getElementById('progText').textContent = '중단됨';
   document.getElementById('progBar').className = 'progress-bar-fill error';
@@ -1525,6 +1552,33 @@ function handleLog({text}) {
   appendLog(text, cls);
 }
 
+// ─── 실행 시간 타이머 ────────────────────────────────────
+let _runTimer = null;
+let _runStart = null;
+function _fmtElapsed(sec) {
+  const s = Math.floor(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`
+    : `${m}:${String(ss).padStart(2,'0')}`;
+}
+function _startTimer() {
+  _runStart = Date.now();
+  clearInterval(_runTimer);
+  _runTimer = setInterval(() => {
+    const sec = (Date.now() - _runStart) / 1000;
+    document.getElementById('elapsedTimer').textContent = '경과 ' + _fmtElapsed(sec);
+  }, 1000);
+}
+function _stopTimer(finalSec) {
+  clearInterval(_runTimer);
+  _runTimer = null;
+  const el = document.getElementById('elapsedTimer');
+  if (finalSec != null) el.textContent = '총 ' + _fmtElapsed(finalSec);
+}
+
 // ─── 진행 처리 ──────────────────────────────────────────
 function handleProgress(d, total) {
   const cur  = d.current || 0;
@@ -1547,6 +1601,15 @@ function handleProgress(d, total) {
   }
   if (d.eta_sec != null) {
     document.getElementById('timeETA').textContent = Math.ceil(d.eta_sec);
+  }
+  if (d.in_tok != null) {
+    document.getElementById('tokenCard').classList.remove('hidden');
+    document.getElementById('tokInLast').textContent  = d.in_tok.toLocaleString();
+    document.getElementById('tokOutLast').textContent = d.out_tok.toLocaleString();
+  }
+  if (d.total_in_tok != null) {
+    document.getElementById('tokInTotal').textContent  = d.total_in_tok.toLocaleString();
+    document.getElementById('tokOutTotal').textContent = d.total_out_tok.toLocaleString();
   }
 }
 
@@ -1577,7 +1640,17 @@ function setGauge(barId, valId, pct, max, label) {
 // ─── 완료 처리 ──────────────────────────────────────────
 function handleDone(d) {
   evtSource?.close();
+  _stopTimer(d.elapsed_total ?? null);
   setRunning(false);
+  if (d.total_in_tok != null) {
+    document.getElementById('tokenCard').classList.remove('hidden');
+    document.getElementById('tokInTotal').textContent  = d.total_in_tok.toLocaleString();
+    document.getElementById('tokOutTotal').textContent = d.total_out_tok.toLocaleString();
+    appendLog(
+      `[토큰 합계] 입력: ${d.total_in_tok.toLocaleString()} / 출력: ${d.total_out_tok.toLocaleString()} tok`,
+      'accent'
+    );
+  }
   if (d.success) {
     const msg = `완료: ${d.completed || '?'}장 처리됨`;
     document.getElementById('progText').textContent = msg;
@@ -1610,6 +1683,7 @@ function setRunning(running) {
   document.getElementById('btnRun').disabled  = running;
   document.getElementById('btnStop').disabled = !running;
   if (running) {
+    _startTimer();
     document.getElementById('progBar').className = 'progress-bar-fill running';
     setStatus('running', '실행 중');
   } else {
@@ -1632,6 +1706,12 @@ function resetProgress() {
   document.getElementById('timeLast').textContent  = '—';
   document.getElementById('timeAvg').textContent   = '—';
   document.getElementById('timeETA').textContent   = '—';
+  document.getElementById('elapsedTimer').textContent = '';
+  document.getElementById('tokenCard').classList.add('hidden');
+  document.getElementById('tokInLast').textContent   = '—';
+  document.getElementById('tokOutLast').textContent  = '—';
+  document.getElementById('tokInTotal').textContent  = '—';
+  document.getElementById('tokOutTotal').textContent = '—';
 }
 
 // ─── 터미널 ─────────────────────────────────────────────

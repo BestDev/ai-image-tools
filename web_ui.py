@@ -314,6 +314,7 @@ RE_HEIC_DONE  = re.compile(r"[✓→]\s|변환\s+완료|저장")
 RE_CLASS_DONE = re.compile(r"→\s+\w+|분류\s+완료")
 RE_HF_DOWN    = re.compile(r'(\d+)%\|')
 RE_GEMINI_DONE = re.compile(r"^\[\s*(\d+)/(\d+)\]\s+(OK|FAIL|SKIP)\s+(\S+)")
+RE_TOKEN      = re.compile(r'\[TOKEN\]\s+in=(\d+)\s+out=(\d+)')
 
 
 def run_process(run_id: str, cmd: list, total: int):
@@ -340,12 +341,26 @@ def run_process(run_id: str, cmd: list, total: int):
         generic_done = 0  # 상세 파싱 불가 도구용 카운터
         pass_offset  = 0  # 2-pass 방식: Pass 2 시작 시 Pass 1 완료 수 보정
         _gem_prev_time = [time.time()]  # gemini_batch: 이전 이미지 완료 시각
+        total_in_tok  = 0
+        total_out_tok = 0
+        _last_in_tok  = None
+        _last_out_tok = None
 
         for line in proc.stdout:
             line = line.rstrip()
             # \r 인플레이스 덮어쓰기 처리 (gemini_batch 등)
             if '\r' in line:
                 line = line.rsplit('\r', 1)[-1]
+
+            # 토큰 사용량 라인 — 로그에 노출 없이 내부 집계
+            mt = RE_TOKEN.search(line)
+            if mt:
+                _last_in_tok   = int(mt.group(1))
+                _last_out_tok  = int(mt.group(2))
+                total_in_tok  += _last_in_tok
+                total_out_tok += _last_out_tok
+                continue
+
             emit("log", {"text": line})
 
             # 프롬프트 생성: [N/M] filename
@@ -372,12 +387,19 @@ def run_process(run_id: str, cmd: list, total: int):
                 timings.append(elapsed)
                 done = len(timings)
                 avg  = sum(timings) / done
-                emit("progress", {
+                ev_data = {
                     "current": done, "total": total,
                     "filename": state.get("current_file", ""),
                     "elapsed_last": elapsed, "avg_sec": avg,
                     "eta_sec": max(0, (total - done) * avg),
-                })
+                }
+                if _last_in_tok is not None:
+                    ev_data.update({
+                        "in_tok": _last_in_tok, "out_tok": _last_out_tok,
+                        "total_in_tok": total_in_tok, "total_out_tok": total_out_tok,
+                    })
+                    _last_in_tok = _last_out_tok = None
+                emit("progress", ev_data)
                 continue
 
             # 프롬프트 생성: 완료 줄 (단어 수 없음 — Pass 1 JoyCaption)
@@ -387,12 +409,19 @@ def run_process(run_id: str, cmd: list, total: int):
                 timings.append(elapsed)
                 done = len(timings)
                 avg  = sum(timings) / done
-                emit("progress", {
+                ev_data = {
                     "current": done, "total": total,
                     "filename": state.get("current_file", ""),
                     "elapsed_last": elapsed, "avg_sec": avg,
                     "eta_sec": max(0, (total - done) * avg),
-                })
+                }
+                if _last_in_tok is not None:
+                    ev_data.update({
+                        "in_tok": _last_in_tok, "out_tok": _last_out_tok,
+                        "total_in_tok": total_in_tok, "total_out_tok": total_out_tok,
+                    })
+                    _last_in_tok = _last_out_tok = None
+                emit("progress", ev_data)
                 continue
 
             # HuggingFace 다운로드 진행률 (log도 함께 emit)
@@ -436,13 +465,20 @@ def run_process(run_id: str, cmd: list, total: int):
         stop_evt.set()
         state["finished"] = True
         success = proc.returncode == 0
-        emit("done", {
+        elapsed_total = round(time.time() - state["started_at"], 1)
+        done_data = {
             "success": success,
             "output_dir": state["output_dir"],
             "completed": len(timings) or generic_done,
             "total": total,
-            **({"returncode": proc.returncode} if not success else {}),
-        })
+            "elapsed_total": elapsed_total,
+        }
+        if total_in_tok > 0:
+            done_data["total_in_tok"]  = total_in_tok
+            done_data["total_out_tok"] = total_out_tok
+        if not success:
+            done_data["returncode"] = proc.returncode
+        emit("done", done_data)
 
     except Exception as e:
         state["finished"] = True
