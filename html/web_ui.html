@@ -522,13 +522,13 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         </div>
 
         <div class="section-title" id="pstyle-title">프롬프트 스타일
-          <span class="tip" data-tip="분석 모델에 주입할 프롬프트 방식 (JoyCaption 포함 전 모델 적용)&#10;standard: 범용 이미지 분석 (기존 방식)&#10;spec: Z-Image Turbo 기술 사양 —&#10;  계층 구조(scene→subject→details→constraints)&#10;  카메라: 이미지 특성 기반 식별 (인물 포트레이트는 렌즈 압축/심도 묘사,&#10;    제품·건축·풍경은 실제 화각 그대로)&#10;  피부 텍스처(pore-level), 60-30-10 색상 팔레트, 상세 네거티브 제약&#10;  JoyCaption: user content에 적용 / Qwen·Gemini: 분석 프롬프트 전체에 적용">?</span>
+          <span class="tip" data-tip="분석 모델에 주입할 프롬프트 방식 (JoyCaption 포함 전 모델 적용)&#10;&#10;standard: 범용 이미지 분석&#10;  nothink에서 안정적 (이행률 ~65%)&#10;  DoF·네크라인·그림자 이행률 높음&#10;&#10;spec: Z-Image Turbo 기술 사양&#10;  think 모드와 함께 사용 시 이행률 ~72% (최고)&#10;  nothink에서는 이행률 ~55%로 하락 — 비추천&#10;  색상팔레트·감정단서·피부텍스처 추가 분석&#10;&#10;  JoyCaption: user content에 적용&#10;  Qwen·Gemini: 분석 프롬프트 전체에 적용">?</span>
         </div>
 
         <div id="pstyle-section" class="form-row">
           <div class="radio-group" style="flex-direction:column;gap:6px">
-            <div class="radio-btn selected" data-group="p-pstyle" data-val="standard" onclick="selectRadio(this)">standard — 범용 이미지 분석 (기존 방식)</div>
-            <div class="radio-btn" data-group="p-pstyle" data-val="spec" onclick="selectRadio(this)">spec — Z-Image Turbo 기술 사양 (계층 구조 · 이미지 기반 카메라 식별 · 피부 텍스처 · 60-30-10 색상)</div>
+            <div class="radio-btn selected" data-group="p-pstyle" data-val="standard" onclick="selectRadio(this)">standard — 범용 이미지 분석 (nothink 시 안정적, DoF·네크라인 이행률 높음)</div>
+            <div class="radio-btn" data-group="p-pstyle" data-val="spec" onclick="selectRadio(this)">spec — Z-Image Turbo 기술 사양 (think 모드와 함께 사용 권장, nothink 시 이행률 저하)</div>
           </div>
         </div>
 
@@ -560,7 +560,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div class="form-row" id="p-lang-row">
           <div class="form-label">
             출력 언어
-            <span class="tip" data-tip="en: 영어 프롬프트 (대부분 이미지 생성 AI 권장)&#10;zh: 중국어 프롬프트 (Z-Image Turbo 이중언어 지원)&#10;JoyCaption 모델은 영어 전용&#10;&#10;지시 언어와 다르게 설정하면 교차 모드로 동작:&#10;EN 지시 + ZH 출력 / ZH 지시 + EN 출력">?</span>
+            <span class="tip" data-tip="en: 영어 프롬프트 (DoF·네크라인 이행률 높음)&#10;zh: 중국어 프롬프트 ★ 추천&#10;  포즈 역동성 1.8배, 그림자 묘사 우수&#10;  S-line·체태곡선·중심분포 묘사 가능&#10;  Z-Image Turbo Qwen3 4B 인코더 네이티브 처리&#10;&#10;JoyCaption 모델은 영어 전용&#10;&#10;지시 언어와 다르게 설정하면 교차 모드로 동작:&#10;EN 지시 + ZH 출력 / ZH 지시 + EN 출력">?</span>
           </div>
           <select id="p-lang">
             <option value="en" selected>English (영어)</option>
@@ -586,7 +586,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
         <div class="checkbox-row" id="thinking-row" style="display:none">
           <input type="checkbox" id="p-thinking">
           <label for="p-thinking">Thinking 모드 (Qwen3.5 전용)</label>
-          <span class="tip" data-tip="Qwen3.5 내부 추론 활성화 — 응답 전 &lt;think&gt; 추론 후 결과만 출력&#10;spec 스타일과 함께 쓸 때 spec 구조 준수율이 향상됨&#10;처리 시간 20~40% 증가 / temperature 1.0·top_p 0.95 자동 적용&#10;Qwen3-VL·JoyCaption·Gemini에는 적용 안 됨">?</span>
+          <span class="tip" data-tip="Qwen3.5 내부 추론 활성화 — 응답 전 &lt;think&gt; 추론 후 결과만 출력&#10;&#10;★ 추천: spec+think+ZH출력 조합이 전체 이행률 최고&#10;  DoF 9/10, 포즈곡선 4/10, S-line·중심분포 명시&#10;  spec의 순서 지시를 체크리스트로 활용하여 누락 방지&#10;&#10;주의: think 모드는 처리 시간 3-4배 증가&#10;  속도 우선 시 std+nothink+ZH출력 추천 (80% 품질, 25% 시간)&#10;  spec+nothink 조합은 비추천 (이행률 붕괴)&#10;&#10;temperature 1.0·top_p 0.95 자동 적용&#10;Qwen3-VL·JoyCaption·Gemini에는 적용 안 됨">?</span>
         </div>
       </div>
 
@@ -1241,9 +1241,9 @@ const GEMINI_MODELS = new Set(['gemini3flash', 'gemini31lite']);
 
 const MODEL_INFO = {
   qwen3vl:      '방식 2 — 이미지를 직접 분석. 빠르고 안정적. VRAM ~16GB.',
-  qwen35:       '방식 3 — 이미지를 직접 분석. 더 상세한 묘사. VRAM ~18GB.',
+  qwen35:       '방식 3 — 이미지를 직접 분석. 더 상세한 묘사. VRAM ~18GB. 추천: spec+think+ZH출력 (최고 품질) 또는 std+nothink+ZH출력 (속도+품질 균형)',
   huihui_vl:    '방식 6 — Qwen3-VL 검열 해제 버전. 성인 이미지 포함 모든 콘텐츠 묘사 가능.',
-  huihui_35:    '방식 7 — Qwen3.5 검열 해제 버전. 성인 이미지 포함 모든 콘텐츠 묘사 가능.',
+  huihui_35:    '방식 7 — Qwen3.5 검열 해제 버전. 성인 이미지 포함 모든 콘텐츠 묘사 가능. 추천 조합은 Qwen3.5와 동일',
   joycaption:   '방식 1 — 영어 캡션만 생성. 2-Pass 워크플로우의 1단계로 먼저 실행 시 사용.',
   gemini3flash: '방식 10 — Gemini 3 Flash API. VRAM 0. SFW 이미지 전용. RPD 10,000/일.',
   gemini31lite: '방식 11 — Gemini 3.1 Flash-Lite API. VRAM 0. SFW 이미지 전용. RPD 150,000/일.',
