@@ -51,47 +51,28 @@ JOYCAPTION_SYSTEM = (
 # JoyCaption 유저 프롬프트 — run_joycaption() user content 용
 # JoyCaption은 영어 전용이므로 EN 버전만 존재
 #
-# 공식 CAPTION_TYPE_MAP의 "Straightforward" 타입을 베이스로 사용:
-#   - "Never mention what's absent, resolution, or unobservable details." → 관찰 앵커
-#   - "Omit mood and speculative wording." → prior knowledge 개입 차단
+# 공식 CAPTION_TYPE_MAP의 "Training Prompt" 타입을 베이스로 사용:
+#   - "Write a stable diffusion prompt for this image." → 학습 분포 정중앙
 # 공식 EXTRA_OPTIONS에서 훈련된 문자열을 그대로 사용하여 학습 분포에 부합시킨다.
+#
+# 이전: "Straightforward" 타입 + 커스텀 산문 지시 → 학습 분포 밖, 이행률 ~55%
+# 변경: "Training Prompt" 타입 + 공식 EXTRA_OPTIONS 토글 → 학습 분포 내
 # ──────────────────────────────────────────────
 JOYCAPTION_USER_EN = (
-    "Write a straightforward caption for this image. "
-    "Begin with the main subject and medium. "
-    "Mention pivotal elements—people, objects, scenery—using confident, definite language. "
-    "Focus on concrete details like color, shape, texture, and spatial relationships. "
-    "If people are present, describe clothing (garment type, neckline, fabric texture, "
-    "exposed skin areas, colors, all accessories) and pose (body orientation, gaze direction, "
-    "arm and hand placement, leg stance) in detail. "
-    "Omit mood and speculative wording. "
-    "Never mention what's absent, resolution, or unobservable details. "
+    "Write a stable diffusion prompt for this image. "
     "Include information about lighting. "
-    "Specify the depth of field and whether the background is in focus or blurred. "
-    "Mention whether the image depicts an extreme close-up, close-up, medium close-up, "
-    "medium shot, cowboy shot, medium wide shot, wide shot, or extreme wide shot. "
-    "Explicitly specify the vantage height (eye-level, low-angle worm's-eye, bird's-eye, etc.). "
-    'Your response will be used by a text-to-image model, so avoid useless meta phrases '
-    'like "This image shows\u2026", "You are looking at...", etc.'
+    "Include information about camera angle. "
+    "Include information about the depth of field. "
+    "Include information about the colors in the image."
 )
 
 JOYCAPTION_USER_SPEC_EN = (
-    "Write a detailed description for this image in a formal tone. "
-    "Begin with the primary subject and their key visual appearance in the first sentence. "
-    "If people are present, describe: "
-    "clothing (garment type and style, neckline, sleeve length, hemline, any visible cutouts "
-    "or sheer panels, exposed skin areas, fabric texture and material as observed, colors and "
-    "patterns, all visible accessories); "
-    "pose (body orientation, head position and gaze direction, arm and hand placement, leg stance). "
-    "Describe only what is clearly visible — never mention what is absent or cannot be observed. "
-    "Do NOT use any ambiguous language. "
+    "Write a stable diffusion prompt for this image. "
     "Include information about lighting. "
-    "Specify the depth of field and whether the background is in focus or blurred. "
-    "Mention whether the image depicts an extreme close-up, close-up, medium close-up, "
-    "medium shot, cowboy shot, medium wide shot, wide shot, or extreme wide shot. "
-    "Explicitly specify the vantage height (eye-level, low-angle worm's-eye, bird's-eye, etc.). "
-    'Your response will be used by a text-to-image model, so avoid useless meta phrases '
-    'like "This image shows\u2026", "You are looking at...", etc.'
+    "Include information about camera angle. "
+    "Include information about the depth of field. "
+    "Include information about the composition of the image. "
+    "Include information about the colors in the image."
 )
 
 # ──────────────────────────────────────────────
