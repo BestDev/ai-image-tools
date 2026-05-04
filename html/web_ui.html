@@ -481,6 +481,7 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
             <div class="radio-btn" data-group="p-model" data-val="joycaption" onclick="selectModel(this)">JoyCaption Beta One — 영어 전용 캡션 생성</div>
             <div class="radio-btn" data-group="p-model" data-val="gemini3flash" onclick="selectModel(this)">Gemini 3 Flash ☁ — API, SFW 전용, 10K RPD</div>
             <div class="radio-btn" data-group="p-model" data-val="gemini31lite" onclick="selectModel(this)">Gemini 3.1 Flash-Lite ☁ — API, SFW 전용, 150K RPD</div>
+            <div class="radio-btn" data-group="p-model" data-val="llamacpp" onclick="selectModel(this)">llama.cpp API — 로컬 서버, GGUF 모델</div>
           </div>
           <div id="model-desc" class="method-desc" style="margin-top:8px"></div>
         </div>
@@ -490,6 +491,13 @@ select:disabled, input:disabled { opacity: .4; cursor: not-allowed; }
             <span class="tip" data-tip="Gemini API 키 (method 10/11 전용)&#10;환경변수 GEMINI_API_KEY 로도 설정 가능">?</span>
           </div>
           <input type="password" id="p-gemini-key" placeholder="AIza..." style="width:100%;font-family:monospace">
+        </div>
+
+        <div id="llama-url-row" class="form-row hidden">
+          <div class="form-label">llama.cpp 서버 URL
+            <span class="tip" data-tip="llama.cpp 서버 주소 (method 12/13 전용)&#10;--mmproj 로 비전 모델 함께 로드 필요&#10;기본: http://localhost:8080">?</span>
+          </div>
+          <input type="text" id="p-llama-url" value="http://localhost:8080" style="width:100%;font-family:monospace">
         </div>
 
         <div class="section-title">2-Pass 옵션
@@ -1238,6 +1246,7 @@ function switchTab(tool) {
 
 // ─── 모델 설명 ─────────────────────────────────────────
 const GEMINI_MODELS = new Set(['gemini3flash', 'gemini31lite']);
+const API_MODELS = new Set(['gemini3flash', 'gemini31lite', 'llamacpp']);
 
 const MODEL_INFO = {
   qwen3vl:      '방식 2 — 이미지를 직접 분석. 빠르고 안정적. VRAM ~16GB.',
@@ -1247,29 +1256,34 @@ const MODEL_INFO = {
   joycaption:   '방식 1 — 영어 캡션만 생성. 2-Pass 워크플로우의 1단계로 먼저 실행 시 사용.',
   gemini3flash: '방식 10 — Gemini 3 Flash API. VRAM 0. SFW 이미지 전용. RPD 10,000/일.',
   gemini31lite: '방식 11 — Gemini 3.1 Flash-Lite API. VRAM 0. SFW 이미지 전용. RPD 150,000/일.',
+  llamacpp:     '방식 12 — llama.cpp 로컬 서버 API. GGUF 모델로 이미지 직접 분석. --mmproj 필요.',
 };
 const MODEL_INFO_2PASS = {
   qwen3vl:   '방식 4 — JoyCaption 캡션을 Qwen3-VL이 정제하여 최종 프롬프트 생성.',
   qwen35:    '방식 5 — JoyCaption 캡션을 Qwen3.5가 정제하여 최종 프롬프트 생성.',
   huihui_vl: '방식 8 — JoyCaption 캡션을 Huihui-Qwen3-VL(검열 해제)이 정제.',
   huihui_35: '방식 9 — JoyCaption 캡션을 Huihui-Qwen3.5(검열 해제)이 정제.',
+  llamacpp:  '방식 13 — JoyCaption 캡션을 llama.cpp 로컬 서버가 정제.',
 };
 
 function selectModel(el) {
   selectRadio(el);
   const model = el.dataset.val;
   const isGemini = GEMINI_MODELS.has(model);
+  const isAPI = API_MODELS.has(model);
+  const isLlama = model === 'llamacpp';
   const isJoy = model === 'joycaption';
   const twopass = document.getElementById('p-twopass').checked;
-  const info = twopass && !isJoy && !isGemini ? MODEL_INFO_2PASS[model] : MODEL_INFO[model];
+  const info = twopass && !isJoy && !isGemini && !isLlama ? MODEL_INFO_2PASS[model] : (twopass && isLlama ? MODEL_INFO_2PASS[model] : MODEL_INFO[model]);
   document.getElementById('model-desc').textContent = info || '';
-  // JoyCaption / Gemini: 2-pass 섹션 숨김
+  // JoyCaption / Gemini: 2-pass 섹션 숨김 (llama.cpp는 2-pass 허용)
   document.getElementById('twopass-section').classList.toggle('hidden', isJoy || isGemini);
   document.getElementById('p-instr-lang-row').classList.toggle('hidden', isJoy);
   document.getElementById('p-lang-row').classList.toggle('hidden', isJoy);
   // Gemini: API 키 표시, 양자화 숨김, 비검열 숨김
   document.getElementById('gemini-key-row').classList.toggle('hidden', !isGemini);
-  document.getElementById('quant-row').classList.toggle('hidden', isGemini);
+  document.getElementById('llama-url-row').classList.toggle('hidden', !isLlama);
+  document.getElementById('quant-row').classList.toggle('hidden', isAPI);
   document.getElementById('uncensored-row').classList.toggle('hidden', isGemini);
   // 프롬프트 스타일: 전 모델 표시 (JoyCaption도 standard/spec 선택 가능)
   document.getElementById('pstyle-title').classList.remove('hidden');
@@ -1281,6 +1295,9 @@ function selectModel(el) {
   if (isJoy || isGemini) {
     document.getElementById('p-twopass').checked = false;
     document.getElementById('twopass-opts').classList.add('hidden');
+  }
+  if (isLlama && twopass) {
+    document.getElementById('model-desc').textContent = MODEL_INFO_2PASS[model] || '';
   }
 }
 
@@ -1406,6 +1423,7 @@ function getFormData() {
       individual:   document.getElementById('p-individual').checked,
       uncensored:   document.getElementById('p-uncensored').checked,
       gemini_key:   document.getElementById('p-gemini-key').value.trim(),
+      llama_url:    document.getElementById('p-llama-url').value.trim(),
       prompt_style: document.querySelector('[data-group="p-pstyle"].selected')?.dataset.val || 'standard',
       thinking:     document.getElementById('p-thinking').checked,
     };

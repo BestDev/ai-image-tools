@@ -17,6 +17,8 @@ prompt_generator_v2.py — Z-Image Turbo 프롬프트 생성 (v2)
    9 - JoyCaption raw → Huihui-Qwen3.5 abliterated 정제 (2-pass)
   10 - Gemini 3 Flash (클라우드 API)
   11 - Gemini 3.1 Flash-Lite (클라우드 API)
+  12 - llama.cpp API 직접 이미지 분석 (로컬 서버)
+  13 - JoyCaption raw → llama.cpp API 정제 (2-pass)
 
 프롬프트 스타일 (--prompt-style):
   standard - 범용 이미지 분석 (기본값)
@@ -939,6 +941,8 @@ _GEMINI_MIN_DELAY = {
     MODEL_GEMINI_LITE:  1.0,
 }
 
+DEFAULT_LLAMA_URL = "http://localhost:8080"
+
 
 def _gemini_rate_wait(model_id: str, elapsed: float):
     """RPD 한도를 초과하지 않도록 최소 딜레이 보장"""
@@ -996,6 +1000,142 @@ def _run_gemini(images: list, args, model_id: str):
     _print_stats(timings, len(remaining) + done)
 
 
+# ──────────────────────────────────────────────
+# llama.cpp API (OpenAI-compatible) 이미지 분석
+# ──────────────────────────────────────────────
+def run_llamacpp_image(image_path: str, base_url: str, lang: str = "en",
+                       uncensored: bool = False, prompt_style: str = "standard",
+                       instr_lang: str = "en") -> str:
+    """llama.cpp 서버 API로 이미지 분석 후 프롬프트 반환"""
+    import base64, io, requests
+    from PIL import Image
+
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except ImportError:
+        pass
+
+    ext = Path(image_path).suffix.lower()
+    if ext in {'.heic', '.heif'}:
+        pil_image = Image.open(image_path).convert("RGB")
+        buf = io.BytesIO()
+        pil_image.save(buf, format='JPEG', quality=95)
+        image_bytes = buf.getvalue()
+        mime_type = 'image/jpeg'
+    else:
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+        mime_map = {
+            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+            '.webp': 'image/webp', '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff', '.tif': 'image/tiff',
+        }
+        mime_type = mime_map.get(ext, 'image/jpeg')
+
+    b64 = base64.b64encode(image_bytes).decode('utf-8')
+    data_url = f"data:{mime_type};base64,{b64}"
+
+    prompt_text = _SYSTEM_PROMPTS[(instr_lang, lang)][prompt_style]
+    messages = []
+    if uncensored:
+        messages.append({"role": "system", "content": UNCENSORED_SYSTEM})
+    messages.append({"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": data_url}},
+        {"type": "text", "text": prompt_text},
+    ]})
+
+    resp = requests.post(
+        f"{base_url.rstrip('/')}/v1/chat/completions",
+        json={"messages": messages, "max_tokens": 1024, "temperature": 0.7, "top_p": 0.9},
+        timeout=300,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    usage = data.get("usage", {})
+    print(f"  [TOKEN] in={usage.get('prompt_tokens', 0)} out={usage.get('completion_tokens', 0)}")
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def run_llamacpp_refine(raw_text: str, base_url: str, lang: str = "en",
+                        uncensored: bool = False, prompt_style: str = "standard",
+                        instr_lang: str = "en") -> str:
+    """llama.cpp 서버 API로 JoyCaption raw 텍스트 정제"""
+    import requests
+
+    template = _REFINE_PROMPTS[(instr_lang, lang)][prompt_style]
+    prompt = template.format(raw=raw_text)
+    messages = []
+    if uncensored:
+        messages.append({"role": "system", "content": UNCENSORED_REFINE_SYSTEM})
+    messages.append({"role": "user", "content": prompt})
+
+    resp = requests.post(
+        f"{base_url.rstrip('/')}/v1/chat/completions",
+        json={"messages": messages, "max_tokens": 1024, "temperature": 0.7, "top_p": 0.9},
+        timeout=300,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    usage = data.get("usage", {})
+    print(f"  [TOKEN] in={usage.get('prompt_tokens', 0)} out={usage.get('completion_tokens', 0)}")
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def _run_llamacpp(images: list, args):
+    """llama.cpp API 실행기 (직접 이미지 분석)."""
+    out_dir = Path(args.output_dir)
+    out_file = out_dir / "prompts.txt"
+    individual = getattr(args, 'individual', False)
+
+    if not args.accumulate and not individual:
+        _clear_file(out_file)
+
+    if individual:
+        done = _count_individual_done(images, out_dir)
+    else:
+        done = _count_prompts(out_file) if args.accumulate else 0
+
+    if done:
+        print(f"[재개] {done}/{len(images)}장 완료 — {Path(images[done]).name}부터 재개")
+    remaining = images[done:]
+
+    print(f"[llama.cpp] 서버: {args.llama_url}\n")
+
+    timings = []
+    for i, img_path in enumerate(remaining, done):
+        print(f"[{i+1}/{len(remaining)+done}] {Path(img_path).name}")
+        t = time.time()
+        try:
+            result = run_llamacpp_image(img_path, args.llama_url,
+                                        lang=args.lang, uncensored=args.uncensored,
+                                        prompt_style=args.prompt_style,
+                                        instr_lang=args.instr_lang)
+            elapsed = time.time() - t
+            timings.append(elapsed)
+            print(f"  완료 ({elapsed:.1f}초) | {len(result.split())}단어")
+            print(f"  {result[:120]}{'...' if len(result) > 120 else ''}")
+
+            if individual:
+                txt_path = _save_individual_prompt(img_path, result, out_dir)
+                print(f"  저장: {txt_path.name}")
+            else:
+                _append_prompt(out_file, result, i)
+        except Exception as e:
+            print(f"  오류: {e}")
+
+    _print_stats(timings, len(remaining) + done)
+
+
+def _loader_llamacpp(args):
+    return args.llama_url, None
+
+
+def _refine_llamacpp(raw, url, _proc, args):
+    return run_llamacpp_refine(raw, url, lang=args.lang, uncensored=args.uncensored,
+                               prompt_style=args.prompt_style, instr_lang=args.instr_lang)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Z-Image Turbo 프롬프트 생성 v2",
@@ -1004,7 +1144,7 @@ def main():
     parser.add_argument("input", help="이미지 파일 또는 폴더 경로")
     parser.add_argument("--output-dir", "-o", required=True, help="출력 폴더 경로")
     parser.add_argument(
-        "--method", "-m", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        "--method", "-m", type=int, default=2, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
         help=(
             "1: JoyCaption (영어 전용)\n"
             "2: Qwen3-VL-8B 직접 분석\n"
@@ -1016,7 +1156,9 @@ def main():
             "8: JoyCaption → Huihui-Qwen3-VL abliterated 정제\n"
             "9: JoyCaption → Huihui-Qwen3.5 abliterated 정제\n"
             "10: Gemini 3 Flash (API)\n"
-            "11: Gemini 3.1 Flash-Lite (API)"
+            "11: Gemini 3.1 Flash-Lite (API)\n"
+            "12: llama.cpp API 직접 이미지 분석 (로컬 서버)\n"
+            "13: JoyCaption → llama.cpp API 정제 (2-pass)"
         ),
     )
     parser.add_argument(
@@ -1052,11 +1194,15 @@ def main():
         help="Gemini API 키 (method 10/11 전용, 환경변수 GEMINI_API_KEY 로도 설정 가능)",
     )
     parser.add_argument(
+        "--llama-url", default=DEFAULT_LLAMA_URL,
+        help=f"llama.cpp 서버 URL (method 12/13 전용, 기본: {DEFAULT_LLAMA_URL})",
+    )
+    parser.add_argument(
         "--thinking", action="store_true",
         help=(
             "Qwen3.5 Thinking 모드 활성화 (method 3/5/7/9 전용)\n"
             "응답 전 내부 추론(<think>)을 수행하여 spec 구조 준수율을 높임\n"
-            "처리 시간 20~40% 증가. temperature=1.0/top_p=0.95/top_k=20 자동 조정\n"
+            "처리 시간 20~40%% 증가. temperature=1.0/top_p=0.95/top_k=20 자동 조정\n"
             "max_new_tokens=32768 (미사용분 VRAM 미점유)\n"
             "Qwen3-VL, JoyCaption, Gemini에는 적용 안 됨"
         ),
@@ -1116,6 +1262,8 @@ def main():
         9: "JoyCaption → Huihui-Qwen3.5 abliterated 정제",
         10: "Gemini 3 Flash (API)",
         11: "Gemini 3.1 Flash-Lite (API)",
+        12: "llama.cpp API 직접 이미지 분석",
+        13: "JoyCaption → llama.cpp API 정제",
     }
 
     print(f"\n=== Z-Image Turbo 프롬프트 생성 v2 ===")
@@ -1132,6 +1280,8 @@ def main():
     print(f"스타일: {args.prompt_style}")
     if args.method in (3, 5, 7, 9):
         print(f"Thinking: {'활성화 (temp=1.0/top_p=0.95/top_k=20, max_tok=32768)' if args.thinking else '비활성화 (temp=0.7/top_p=0.9/top_k=20)'}")
+    if args.method in (12, 13):
+        print(f"서버  : {args.llama_url}")
     print()
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
@@ -1148,6 +1298,8 @@ def main():
         9:  lambda imgs, a: _run_twopass(imgs, a, _loader_qwen35_ab, _refine_qwen35, "Huihui-Qwen3.5"),
         10: lambda imgs, a: _run_gemini(imgs, a, MODEL_GEMINI_FLASH),
         11: lambda imgs, a: _run_gemini(imgs, a, MODEL_GEMINI_LITE),
+        12: lambda imgs, a: _run_llamacpp(imgs, a),
+        13: lambda imgs, a: _run_twopass(imgs, a, _loader_llamacpp, _refine_llamacpp, "llama.cpp API"),
     }
     dispatch[args.method](images, args)
 

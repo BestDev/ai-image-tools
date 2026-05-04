@@ -152,6 +152,8 @@ def build_cmd(tool: str, params: dict):
             ("huihui_35",     True):  9,
             ("gemini3flash",  False): 10,
             ("gemini31lite",  False): 11,
+            ("llamacpp",      False): 12,
+            ("llamacpp",      True):  13,
         }
         method = METHOD_MAP.get((model, two_pass), 2)
 
@@ -196,10 +198,13 @@ def build_cmd(tool: str, params: dict):
         gemini_key = params.get("gemini_key", "").strip()
         if gemini_key:
             cmd += ["--gemini-key", gemini_key]
+        llama_url = params.get("llama_url", "").strip()
+        if llama_url:
+            cmd += ["--llama-url", llama_url]
 
         imgs = (len([p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXT])
                 if path.is_dir() else 1)
-        total_steps = imgs * 2 if method in (4, 5, 8, 9) else imgs
+        total_steps = imgs * 2 if method in (4, 5, 8, 9, 13) else imgs
         return cmd, total_steps, output_dir
 
     elif tool == "heic":
